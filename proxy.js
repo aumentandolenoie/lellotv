@@ -4,7 +4,7 @@ async function resolveStream(channel, clientIp, proxyUrl) {
   const streamUrl = channel.stream;
   const needsExtractor = channel.extractor === true;
 
-  // Canale Vavoo (o simile) CON EasyProxy disponibile
+  // Canale Vavoo CON EasyProxy
   if (needsExtractor && proxyUrl) {
     try {
       const base = proxyUrl.replace(/\/$/, "");
@@ -26,7 +26,7 @@ async function resolveStream(channel, clientIp, proxyUrl) {
       });
 
       const data = response.data;
-      console.log("Risposta extractor: " + JSON.stringify(data).substring(0, 200));
+      console.log("Risposta extractor: " + JSON.stringify(data).substring(0, 300));
 
       if (!data || !data.destination_url) {
         console.warn("Nessun destination_url, uso URL originale");
@@ -35,18 +35,9 @@ async function resolveStream(channel, clientIp, proxyUrl) {
 
       const destUrl = data.destination_url;
       const reqHeaders = data.request_headers || {};
-      const endpoint = data.mediaflow_endpoint || "proxy_stream_endpoint";
 
-      // Scegli l'endpoint corretto in base a quello suggerito da EasyProxy
-      var proxyEndpoint;
-      if (endpoint === "proxy_stream_endpoint") {
-        proxyEndpoint = base + "/proxy/stream";
-      } else {
-        proxyEndpoint = base + "/proxy/manifest.m3u8";
-      }
-
-      // Costruisci URL con destination_url
-      var finalUrl = proxyEndpoint + "?url=" + encodeURIComponent(destUrl);
+      // Usa /proxy/hls/manifest.m3u8 con parametro ?d= come indicato da /api/info
+      var finalUrl = base + "/proxy/hls/manifest.m3u8?d=" + encodeURIComponent(destUrl);
 
       // Aggiungi gli header richiesti come h_<nome>=<valore>
       Object.keys(reqHeaders).forEach(function(key) {
