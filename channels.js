@@ -84,7 +84,7 @@ const channels = [
     name: "Sky Sport F1",
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Sky_Sport_F1_logo.png/200px-Sky_Sport_F1_logo.png",
     genre: "Sport",
-    stream: "https://www.vavoo.to/play/4246774056/index.m3u8",
+    stream: "https://vavoo.to/vavoo-iptv/play/4246774056158889749712",
     extractor: true,
   },
 ];
