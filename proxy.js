@@ -6,54 +6,18 @@ async function resolveStream(channel, clientIp, proxyUrl) {
 
   // Canale Vavoo CON EasyProxy
   if (needsExtractor && proxyUrl) {
-    try {
-      const base = proxyUrl.replace(/\/$/, "");
-      const extractorUrl =
-        base +
-        "/extractor/video?url=" +
-        encodeURIComponent(streamUrl) +
-        "&redirect_stream=false";
+    const base = proxyUrl.replace(/\/$/, "");
 
-      console.log("Estrazione con EasyProxy: " + extractorUrl);
+    // Costruisci direttamente l'URL per EasyProxy
+    // usando /proxy/hls/manifest.m3u8 con ?d= e api_password
+    var finalUrl =
+      base +
+      "/proxy/hls/manifest.m3u8?d=" +
+      encodeURIComponent(streamUrl) +
+      "&api_password=admin";
 
-      const response = await axios.get(extractorUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "X-Forwarded-For": clientIp,
-          "X-Real-IP": clientIp,
-        },
-        timeout: 15000,
-      });
-
-      const data = response.data;
-      console.log("Risposta extractor: " + JSON.stringify(data).substring(0, 300));
-
-      if (!data || !data.destination_url) {
-        console.warn("Nessun destination_url, uso URL originale");
-        return streamUrl;
-      }
-
-      const destUrl = data.destination_url;
-      const reqHeaders = data.request_headers || {};
-
-      // Usa /proxy/hls/manifest.m3u8 con parametro ?d= come indicato da /api/info
-      var finalUrl = base + "/proxy/hls/manifest.m3u8?d=" + encodeURIComponent(destUrl);
-
-      // Aggiungi gli header richiesti come h_<nome>=<valore>
-      Object.keys(reqHeaders).forEach(function(key) {
-        var value = reqHeaders[key];
-        if (value) {
-          finalUrl += "&h_" + key.toLowerCase() + "=" + encodeURIComponent(value);
-        }
-      });
-
-      console.log("Stream finale: " + finalUrl);
-      return finalUrl;
-
-    } catch (err) {
-      console.error("Errore extractor EasyProxy: " + err.message);
-      return streamUrl;
-    }
+    console.log("Stream Vavoo via EasyProxy: " + finalUrl);
+    return finalUrl;
   }
 
   // Canale Vavoo SENZA EasyProxy
