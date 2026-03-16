@@ -6,7 +6,7 @@ const channels = [
     genre: "Sport",
     streams: [
       {
-        url: "https://vavoo.to/vavoo-iptv/play/4246774056158889749712",
+        url: "https://vavoo.to/vavoo-iptv/play/4246774056",
         extractor: true,
         name: "Vavoo",
       },
