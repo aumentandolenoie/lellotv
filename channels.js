@@ -24,7 +24,6 @@ const channels = [
     genre: "Entertainment",
     stream: "https://vavoo.to/vavoo-iptv/play/2130523218823893ad0255",
     extractor: true,
-    name: "Vavoo"
   },
   
 ];
