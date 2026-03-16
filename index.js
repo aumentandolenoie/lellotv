@@ -1,4 +1,4 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
+const { addonBuilder } = require("stremio-addon-sdk");
 const express = require("express");
 const channels = require("./channels");
 const { resolveStream } = require("./proxy");
@@ -27,18 +27,152 @@ const manifest = {
   },
 };
 
+function buildRouter(proxyUrl) {
+  const addonInstance = new addonBuilder({ ...manifest });
+
+  addonInstance.defineCatalogHandler(function({ type, id, extra }) {
+    if (type !== "tv" || id !== "lellotv-free") {
+      return Promise.resolve({ metas: [] });
+    }
+    var list = channels;
+    if (extra && extra.genre) {
+      list = channels.filter(function(ch) { return ch.genre === extra.genre; });
+    }
+    var metas = list.map(function(ch) {
+      return {
+        id: "lellotv:" + ch.id,
+        type: "tv",
+        name: ch.name,
+        poster: ch.logo,
+        logo: ch.logo,
+        description: ch.name + " | " + ch.genre,
+        genres: [ch.genre],
+      };
+    });
+    return Promise.resolve({ metas: metas });
+  });
+
+  addonInstance.defineMetaHandler(function({ type, id }) {
+    if (type !== "tv" || id.indexOf("lellotv:") !== 0) {
+      return Promise.resolve({ meta: null });
+    }
+    var channelId = id.replace("lellotv:", "");
+    var ch = channels.find(function(c) { return c.id === channelId; });
+    if (!ch) return Promise.resolve({ meta: null });
+    return Promise.resolve({
+      meta: {
+        id: "lellotv:" + ch.id,
+        type: "tv",
+        name: ch.name,
+        poster: ch.logo,
+        logo: ch.logo,
+        description: ch.name + " - Canale free italiano",
+        genres: [ch.genre],
+      },
+    });
+  });
+
+  addonInstance.defineStreamHandler(async function({ type, id }, req) {
+    if (type !== "tv" || id.indexOf("lellotv:") !== 0) {
+      return Promise.resolve({ streams: [] });
+    }
+    var channelId = id.replace("lellotv:", "");
+    var ch = channels.find(function(c) { return c.id === channelId; });
+    if (!ch) return Promise.resolve({ streams: [] });
+
+    var clientIp = "127.0.0.1";
+    if (req && req.headers && req.headers["x-forwarded-for"]) {
+      clientIp = req.headers["x-forwarded-for"];
+    } else if (req && req.socket && req.socket.remoteAddress) {
+      clientIp = req.socket.remoteAddress;
+    }
+
+    console.log("Stream: " + ch.name + " | IP: " + clientIp + " | Proxy: " + (proxyUrl || "nessuno"));
+
+    var resolvedUrl = await resolveStream(ch.stream, clientIp, proxyUrl);
+
+    return Promise.resolve({
+      streams: [
+        {
+          name: "LelloTv",
+          title: "📺 " + ch.name + "\n" + (proxyUrl ? "🌐 Via Proxy" : "🔗 Diretto"),
+          url: resolvedUrl,
+          behaviorHints: { notWebReady: false },
+        },
+      ],
+    });
+  });
+
+  const iface = addonInstance.getInterface();
+
+  const router = express.Router();
+
+  router.get("/manifest.json", function(req, res) {
+    res.setHeader("Content-Type", "application/json");
+    res.json(iface.manifest);
+  });
+
+  router.get("/catalog/:type/:id.json", function(req, res) {
+    iface.get({
+      resource: "catalog",
+      type: req.params.type,
+      id: req.params.id.replace(".json", ""),
+      extra: req.query,
+    }).then(function(resp) {
+      res.setHeader("Content-Type", "application/json");
+      res.json(resp);
+    }).catch(function(err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    });
+  });
+
+  router.get("/meta/:type/:id.json", function(req, res) {
+    iface.get({
+      resource: "meta",
+      type: req.params.type,
+      id: req.params.id.replace(".json", ""),
+      extra: req.query,
+    }).then(function(resp) {
+      res.setHeader("Content-Type", "application/json");
+      res.json(resp);
+    }).catch(function(err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    });
+  });
+
+  router.get("/stream/:type/:id.json", function(req, res) {
+    iface.get({
+      resource: "stream",
+      type: req.params.type,
+      id: req.params.id.replace(".json", ""),
+      extra: req.query,
+    }, req).then(function(resp) {
+      res.setHeader("Content-Type", "application/json");
+      res.json(resp);
+    }).catch(function(err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    });
+  });
+
+  return router;
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use((req, res, next) => {
+app.use(function(req, res, next) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
   next();
 });
 
-app.get("/configure", (req, res) => {
-  const existingProxy = req.query.proxy ? decodeURIComponent(req.query.proxy) : "";
+// ── /configure ────────────────────────────────────────────────────────────────
+app.get("/configure", function(req, res) {
+  var existingProxy = req.query.proxy ? decodeURIComponent(req.query.proxy) : "";
   res.send(`<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -116,109 +250,40 @@ updateStatus();
 </html>`);
 });
 
-app.get("/", (req, res) => {
+// ── / → redirect a /configure ─────────────────────────────────────────────────
+app.get("/", function(req, res) {
   res.redirect("/configure");
 });
 
-function buildAddonRouter(proxyUrl) {
-  const addonInstance = new addonBuilder({ ...manifest });
+// ── Addon senza proxy montato su /addon ───────────────────────────────────────
+app.use("/addon", buildRouter(null));
 
-  addonInstance.defineCatalogHandler(function({ type, id, extra }) {
-    if (type !== "tv" || id !== "lellotv-free") {
-      return Promise.resolve({ metas: [] });
-    }
-    var list = channels;
-    if (extra && extra.genre) {
-      list = channels.filter(function(ch) { return ch.genre === extra.genre; });
-    }
-    var metas = list.map(function(ch) {
-      return {
-        id: "lellotv:" + ch.id,
-        type: "tv",
-        name: ch.name,
-        poster: ch.logo,
-        logo: ch.logo,
-        description: ch.name + " | " + ch.genre,
-        genres: [ch.genre],
-      };
-    });
-    return Promise.resolve({ metas: metas });
-  });
+// ── manifest.json nella root (per compatibilità Stremio) ─────────────────────
+app.get("/manifest.json", function(req, res) {
+  res.setHeader("Content-Type", "application/json");
+  res.json(manifest);
+});
 
-  addonInstance.defineMetaHandler(function({ type, id }) {
-    if (type !== "tv" || id.indexOf("lellotv:") !== 0) {
-      return Promise.resolve({ meta: null });
-    }
-    var channelId = id.replace("lellotv:", "");
-    var ch = channels.find(function(c) { return c.id === channelId; });
-    if (!ch) return Promise.resolve({ meta: null });
-    return Promise.resolve({
-      meta: {
-        id: "lellotv:" + ch.id,
-        type: "tv",
-        name: ch.name,
-        poster: ch.logo,
-        logo: ch.logo,
-        description: ch.name + " - Canale free italiano",
-        genres: [ch.genre],
-      },
-    });
-  });
-
-  addonInstance.defineStreamHandler(async function({ type, id }, req) {
-    if (type !== "tv" || id.indexOf("lellotv:") !== 0) {
-      return Promise.resolve({ streams: [] });
-    }
-    var channelId = id.replace("lellotv:", "");
-    var ch = channels.find(function(c) { return c.id === channelId; });
-    if (!ch) return Promise.resolve({ streams: [] });
-
-    var clientIp = "127.0.0.1";
-    if (req && req.headers && req.headers["x-forwarded-for"]) {
-      clientIp = req.headers["x-forwarded-for"];
-    } else if (req && req.socket && req.socket.remoteAddress) {
-      clientIp = req.socket.remoteAddress;
-    }
-
-    console.log("Stream: " + ch.name + " | IP: " + clientIp + " | Proxy: " + (proxyUrl || "nessuno"));
-
-    var resolvedUrl = await resolveStream(ch.stream, clientIp, proxyUrl);
-
-    return Promise.resolve({
-      streams: [
-        {
-          name: "LelloTv",
-          title: "📺 " + ch.name + "\n" + (proxyUrl ? "🌐 Via Proxy" : "🔗 Diretto"),
-          url: resolvedUrl,
-          behaviorHints: { notWebReady: false },
-        },
-      ],
-    });
-  });
-
-  return addonInstance.getInterface();
-}
-
+// ── Addon con proxy: /:proxyEncoded/* ─────────────────────────────────────────
 app.use("/:proxyEncoded", function(req, res, next) {
   var raw = req.params.proxyEncoded;
-  var skip = ["manifest.json", "configure", "catalog", "meta", "stream", "addon"];
+  var skip = ["manifest.json", "configure", "catalog", "meta", "stream", "addon", "favicon.ico"];
   if (skip.indexOf(raw) !== -1) return next();
 
   var proxyUrl;
   try {
     proxyUrl = decodeURIComponent(raw);
     new URL(proxyUrl);
-  } catch (e) {
+  } catch(e) {
     return next();
   }
 
-  var subApp = express();
-  subApp.use(function(r, s, n) { s.setHeader("Access-Control-Allow-Origin", "*"); n(); });
-  serveHTTP(buildAddonRouter(proxyUrl), { app: subApp, port: PORT, path: "/" });
-  subApp(req, res, next);
+  buildRouter(proxyUrl)(req, res, next);
 });
 
-serveHTTP(buildAddonRouter(null), { app: app, port: PORT, path: "/" });
-
-console.log("LelloTv avviato su http://localhost:" + PORT);
-console.log("Configurazione: http://localhost:" + PORT + "/configure");
+// ── Avvio ─────────────────────────────────────────────────────────────────────
+app.listen(PORT, function() {
+  console.log("LelloTv avviato su http://localhost:" + PORT);
+  console.log("Configurazione: http://localhost:" + PORT + "/configure");
+  console.log("Manifest: http://localhost:" + PORT + "/manifest.json");
+});
