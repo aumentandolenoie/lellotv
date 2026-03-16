@@ -170,7 +170,6 @@ app.use(function(req, res, next) {
 });
 
 app.get("/configure", function(req, res) {
-  var existingProxy = req.query.proxy ? decodeURIComponent(req.query.proxy) : "";
   res.send(`<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -180,116 +179,137 @@ app.get("/configure", function(req, res) {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#0d0d1a;color:#eee;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
-.card{background:#16213e;border-radius:16px;padding:40px;max-width:480px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.card{background:#16213e;border-radius:16px;padding:40px;max-width:500px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.4)}
 .logo{font-size:48px;text-align:center;margin-bottom:10px}
 h1{text-align:center;color:#e94560;font-size:28px;margin-bottom:6px}
 .subtitle{text-align:center;color:#888;font-size:14px;margin-bottom:30px}
-label{display:block;font-size:13px;color:#aaa;margin-bottom:6px;margin-top:20px;text-transform:uppercase;letter-spacing:.5px}
-input{width:100%;padding:12px 16px;background:#0f3460;border:1px solid #1a4a7a;border-radius:8px;color:#fff;font-size:15px;outline:none;transition:border .2s}
+label{display:block;font-size:13px;color:#aaa;margin-bottom:8px;margin-top:20px;text-transform:uppercase;letter-spacing:.5px}
+input{width:100%;padding:12px 16px;background:#0f3460;border:2px solid #1a4a7a;border-radius:8px;color:#fff;font-size:14px;outline:none}
 input:focus{border-color:#e94560}
-input::placeholder{color:#555}
-.hint{font-size:12px;color:#666;margin-top:6px;line-height:1.5}
-.hint code{background:#0a2540;padding:2px 6px;border-radius:4px;color:#7ec8e3;font-size:11px}
+input::placeholder{color:#444}
+.hint{font-size:12px;color:#555;margin-top:8px;line-height:1.6}
+.hint code{background:#0a2540;padding:2px 6px;border-radius:4px;color:#7ec8e3}
+.status{margin-top:12px;padding:10px 14px;border-radius:8px;font-size:13px;text-align:center;min-height:40px;display:flex;align-items:center;justify-content:center;gap:8px}
+.status.empty{background:#111;color:#555}
+.status.ok{background:#0d2e0d;color:#4caf50;border:1px solid #1a4a1a}
+.status.err{background:#2e0d0d;color:#e94560;border:1px solid #4a1a1a}
 .divider{border:none;border-top:1px solid #1e2d4a;margin:28px 0}
-.btn{display:block;width:100%;padding:14px;background:#e94560;color:white;border:none;border-radius:10px;font-size:17px;font-weight:bold;cursor:pointer;text-align:center;text-decoration:none;margin-top:12px;transition:background .2s}
-.btn:hover{background:#c73652}
-.btn-secondary{background:#1a3a6a;font-size:14px;font-weight:normal}
-.btn-secondary:hover{background:#1e4a8a}
-.badge{display:inline-block;background:#1a4a2a;color:#4caf50;border-radius:20px;padding:3px 10px;font-size:12px;margin-left:8px;vertical-align:middle}
-.badge.off{background:#3a1a1a;color:#e94560}
-#proxyStatus{margin-top:16px;font-size:13px;color:#888;text-align:center;min-height:20px}
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:12px;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-primary{background:#e94560;color:white}
+.btn-copy{background:#1a3a6a;color:white;font-size:14px;font-weight:normal}
+.manifest-box{margin-top:16px;background:#0a1628;border:1px solid #1a3a6a;border-radius:8px;padding:12px;word-break:break-all;font-size:12px;color:#7ec8e3;font-family:monospace;min-height:36px}
 </style>
 </head>
 <body>
 <div class="card">
-<div class="logo">📺</div>
-<h1>LelloTv</h1>
-<p class="subtitle">LelloTv - Tv in Diretta</p>
-<label>URL Proxy <span id="proxyBadge" class="badge off">Non attivo</span></label>
-<input type="text" id="proxyInput" placeholder="https://mio-proxy.onrender.com" value="${existingProxy}" oninput="updateStatus()"/>
-<p class="hint">Facoltativo. Inserisci l'URL del tuo proxy.<br>
-Esempi: <code>https://mio-proxy.onrender.com</code> oppure <code>http://utente:password@host:porta</code></p>
-<div id="proxyStatus"></div>
-<hr class="divider">
-<button class="btn" onclick="install()">🚀 Installa su Stremio</button>
-<button class="btn btn-secondary" onclick="copyManifest()">📋 Copia URL Manifest</button>
+  <div class="logo">📺</div>
+  <h1>LelloTv</h1>
+  <p class="subtitle">LelloTv - Tv in Diretta</p>
+
+  <label>URL Proxy (facoltativo)</label>
+  <input type="text" id="proxyInput" placeholder="https://mio-proxy.onrender.com" oninput="onProxyChange()" />
+  <p class="hint">
+    Lascia vuoto per connessione diretta.<br>
+    Esempi validi: <code>https://host.com</code> &nbsp; <code>http://host:8080</code> &nbsp; <code>http://user:pass@host:porta</code>
+  </p>
+  <div class="status empty" id="statusBox">Nessun proxy inserito — verrà usata la connessione diretta.</div>
+
+  <hr class="divider">
+
+  <div style="font-size:13px;color:#aaa;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">URL Manifest generato</div>
+  <div class="manifest-box" id="manifestBox"></div>
+
+  <button class="btn btn-copy" onclick="copyManifest()">📋 Copia URL Manifest</button>
+  <button class="btn btn-primary" onclick="installAddon()">🚀 Installa su Stremio</button>
 </div>
+
 <script>
-function getProxy(){
-  return document.getElementById('proxyInput').value.trim();
-}
+var currentProxy = '';
 
-function isValidUrl(str){
-  if(!str) return false;
-  try{
-    var u = new URL(str);
-    return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'socks5:';
-  } catch(e){
-    return false;
-  }
-}
+function onProxyChange() {
+  currentProxy = document.getElementById('proxyInput').value.trim();
+  var statusBox = document.getElementById('statusBox');
 
-function updateStatus(){
-  var proxy = getProxy();
-  var badge = document.getElementById('proxyBadge');
-  var status = document.getElementById('proxyStatus');
-
-  if(!proxy){
-    badge.textContent = 'Non attivo';
-    badge.className = 'badge off';
-    status.textContent = 'Nessun proxy — verrà usata la connessione diretta.';
-    return;
-  }
-
-  if(isValidUrl(proxy)){
-    var u = new URL(proxy);
-    badge.textContent = 'Attivo';
-    badge.className = 'badge';
-    status.textContent = 'Proxy rilevato: ' + u.host;
+  if (!currentProxy) {
+    statusBox.className = 'status empty';
+    statusBox.textContent = 'Nessun proxy inserito — verrà usata la connessione diretta.';
   } else {
-    badge.textContent = 'Formato non valido';
-    badge.className = 'badge off';
-    status.textContent = 'URL non valido. Esempio corretto: https://mio-proxy.onrender.com';
+    var valid = false;
+    try {
+      var u = new URL(currentProxy);
+      valid = (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'socks5:');
+    } catch(e) {
+      valid = false;
+    }
+
+    if (valid) {
+      statusBox.className = 'status ok';
+      statusBox.innerHTML = '✅ Proxy valido: <strong>' + new URL(currentProxy).host + '</strong>';
+    } else {
+      statusBox.className = 'status err';
+      statusBox.textContent = '⚠️ URL non valido. Controlla il formato.';
+    }
   }
+
+  updateManifestBox();
 }
 
-function buildManifestUrl(){
-  var proxy = getProxy();
+function getManifestUrl() {
   var base = window.location.origin;
-  if(proxy && isValidUrl(proxy)){
-    return base + '/' + encodeURIComponent(proxy) + '/manifest.json';
+  if (currentProxy) {
+    return base + '/' + encodeURIComponent(currentProxy) + '/manifest.json';
   }
   return base + '/manifest.json';
 }
 
-function install(){
-  var proxy = getProxy();
-  if(proxy && !isValidUrl(proxy)){
-    alert('URL proxy non valido. Correggilo o lascialo vuoto per procedere senza proxy.');
-    return;
+function updateManifestBox() {
+  document.getElementById('manifestBox').textContent = getManifestUrl();
+}
+
+function copyManifest() {
+  var url = getManifestUrl();
+  var btn = document.querySelector('.btn-copy');
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function() {
+      btn.textContent = '✅ Copiato!';
+      setTimeout(function(){ btn.textContent = '📋 Copia URL Manifest'; }, 2000);
+    }).catch(function() {
+      fallbackCopy(url);
+    });
+  } else {
+    fallbackCopy(url);
   }
-  var manifestUrl = buildManifestUrl();
-  var stremioUrl = 'stremio://' + manifestUrl.replace(/^https?:\/\//, '');
+}
+
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    var btn = document.querySelector('.btn-copy');
+    btn.textContent = '✅ Copiato!';
+    setTimeout(function(){ btn.textContent = '📋 Copia URL Manifest'; }, 2000);
+  } catch(e) {
+    alert('Copia manuale: ' + text);
+  }
+  document.body.removeChild(ta);
+}
+
+function installAddon() {
+  var manifestUrl = getManifestUrl();
+  var stremioUrl = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
   window.location.href = stremioUrl;
 }
 
-function copyManifest(){
-  var proxy = getProxy();
-  if(proxy && !isValidUrl(proxy)){
-    alert('URL proxy non valido. Correggilo o lascialo vuoto.');
-    return;
-  }
-  var url = buildManifestUrl();
-  navigator.clipboard.writeText(url).then(function(){
-    var btn = document.querySelector('.btn-secondary');
-    btn.textContent = '✅ Copiato!';
-    setTimeout(function(){ btn.textContent = '📋 Copia URL Manifest'; }, 2000);
-  }).catch(function(){
-    prompt('Copia questo URL:', url);
-  });
-}
-
-updateStatus();
+// Inizializza
+updateManifestBox();
 </script>
 </body>
 </html>`);
