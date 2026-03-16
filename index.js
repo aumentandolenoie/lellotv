@@ -27,7 +27,6 @@ const manifest = {
   },
 };
 
-// ── Handler catalog ────────────────────────────────────────────────────────────
 function handleCatalog(type, id, extra) {
   if (type !== "tv" || id !== "lellotv-free") {
     return Promise.resolve({ metas: [] });
@@ -50,7 +49,6 @@ function handleCatalog(type, id, extra) {
   return Promise.resolve({ metas: metas });
 }
 
-// ── Handler meta ───────────────────────────────────────────────────────────────
 function handleMeta(type, id) {
   if (type !== "tv" || id.indexOf("lellotv:") !== 0) {
     return Promise.resolve({ meta: null });
@@ -71,7 +69,6 @@ function handleMeta(type, id) {
   });
 }
 
-// ── Handler stream ─────────────────────────────────────────────────────────────
 async function handleStream(type, id, clientIp, proxyUrl) {
   if (type !== "tv" || id.indexOf("lellotv:") !== 0) {
     return Promise.resolve({ streams: [] });
@@ -82,7 +79,7 @@ async function handleStream(type, id, clientIp, proxyUrl) {
 
   console.log("Stream: " + ch.name + " | IP: " + clientIp + " | Proxy: " + (proxyUrl || "nessuno"));
 
-  var resolvedUrl = await resolveStream(ch.stream, clientIp, proxyUrl);
+  var resolvedUrl = await resolveStream(ch, clientIp, proxyUrl);
 
   return Promise.resolve({
     streams: [
@@ -96,22 +93,18 @@ async function handleStream(type, id, clientIp, proxyUrl) {
   });
 }
 
-// ── Costruisce il router Express per un dato proxyUrl ─────────────────────────
 function buildRouter(proxyUrl) {
   var router = express.Router();
 
-  // manifest
   router.get("/manifest.json", function(req, res) {
     res.setHeader("Content-Type", "application/json");
     res.json(manifest);
   });
 
-  // catalog
   router.get("/catalog/:type/:id.json", function(req, res) {
     var type = req.params.type;
     var id = req.params.id;
     var extra = req.query || {};
-
     handleCatalog(type, id, extra)
       .then(function(resp) {
         res.setHeader("Content-Type", "application/json");
@@ -123,21 +116,17 @@ function buildRouter(proxyUrl) {
       });
   });
 
-  // catalog con extra nel path (es: /catalog/tv/lellotv-free/genre=News.json)
   router.get("/catalog/:type/:id/:extra.json", function(req, res) {
     var type = req.params.type;
     var id = req.params.id;
     var extraStr = req.params.extra;
     var extra = {};
-
-    // Parsa key=value dalla stringa
     if (extraStr) {
       extraStr.split("&").forEach(function(part) {
         var kv = part.split("=");
         if (kv.length === 2) extra[kv[0]] = decodeURIComponent(kv[1]);
       });
     }
-
     handleCatalog(type, id, extra)
       .then(function(resp) {
         res.setHeader("Content-Type", "application/json");
@@ -149,11 +138,9 @@ function buildRouter(proxyUrl) {
       });
   });
 
-  // meta
   router.get("/meta/:type/:id.json", function(req, res) {
     var type = req.params.type;
     var id = req.params.id;
-
     handleMeta(type, id)
       .then(function(resp) {
         res.setHeader("Content-Type", "application/json");
@@ -165,18 +152,15 @@ function buildRouter(proxyUrl) {
       });
   });
 
-  // stream
   router.get("/stream/:type/:id.json", function(req, res) {
     var type = req.params.type;
     var id = req.params.id;
-
     var clientIp = "127.0.0.1";
     if (req.headers["x-forwarded-for"]) {
       clientIp = req.headers["x-forwarded-for"].split(",")[0].trim();
     } else if (req.socket && req.socket.remoteAddress) {
       clientIp = req.socket.remoteAddress;
     }
-
     handleStream(type, id, clientIp, proxyUrl)
       .then(function(resp) {
         res.setHeader("Content-Type", "application/json");
@@ -191,7 +175,6 @@ function buildRouter(proxyUrl) {
   return router;
 }
 
-// ── App Express principale ────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -202,7 +185,6 @@ app.use(function(req, res, next) {
   next();
 });
 
-// ── Pagina configurazione ─────────────────────────────────────────────────────
 app.get("/configure", function(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="it">
@@ -240,65 +222,48 @@ input::placeholder{color:#444}
   <div class="logo">📺</div>
   <h1>LelloTv</h1>
   <p class="subtitle">LelloTv - Tv in Diretta</p>
-
-  <label>URL Proxy (facoltativo)</label>
-  <input type="text" id="proxyInput" placeholder="https://mio-proxy.onrender.com" oninput="onProxyChange()" />
+  <label>URL EasyProxy (facoltativo)</label>
+  <input type="text" id="proxyInput" placeholder="https://protettore.onrender.com" oninput="onProxyChange()" />
   <p class="hint">
-    Lascia vuoto per connessione diretta.<br>
-    Esempi: <code>https://host.com</code> &nbsp; <code>http://host:8080</code> &nbsp; <code>http://user:pass@host:porta</code>
+    Inserisci l'URL della tua istanza EasyProxy per abilitare i canali Vavoo.<br>
+    Esempio: <code>https://protettore.onrender.com</code>
   </p>
-  <div class="status empty" id="statusBox">Nessun proxy inserito — verrà usata la connessione diretta.</div>
-
+  <div class="status empty" id="statusBox">Nessun proxy inserito — solo canali diretti disponibili.</div>
   <hr class="divider">
-
   <div style="font-size:13px;color:#aaa;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">URL Manifest generato</div>
   <div class="manifest-box" id="manifestBox"></div>
-
   <button class="btn btn-copy" onclick="copyManifest()">📋 Copia URL Manifest</button>
   <button class="btn btn-primary" onclick="installAddon()">🚀 Installa su Stremio</button>
 </div>
-
 <script>
 var currentProxy = '';
-
 function onProxyChange() {
   currentProxy = document.getElementById('proxyInput').value.trim();
   var statusBox = document.getElementById('statusBox');
-
   if (!currentProxy) {
     statusBox.className = 'status empty';
-    statusBox.textContent = 'Nessun proxy inserito — verrà usata la connessione diretta.';
+    statusBox.textContent = 'Nessun proxy inserito — solo canali diretti disponibili.';
   } else {
     var valid = false;
-    try {
-      var u = new URL(currentProxy);
-      valid = (u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'socks5:');
-    } catch(e) {
-      valid = false;
-    }
+    try { var u = new URL(currentProxy); valid = (u.protocol === 'http:' || u.protocol === 'https:'); } catch(e) {}
     if (valid) {
       statusBox.className = 'status ok';
-      statusBox.innerHTML = '✅ Proxy valido: <strong>' + new URL(currentProxy).host + '</strong>';
+      statusBox.innerHTML = '✅ EasyProxy: <strong>' + new URL(currentProxy).host + '</strong> — canali Vavoo abilitati';
     } else {
       statusBox.className = 'status err';
-      statusBox.textContent = '⚠️ URL non valido. Controlla il formato.';
+      statusBox.textContent = '⚠️ URL non valido. Esempio: https://protettore.onrender.com';
     }
   }
   updateManifestBox();
 }
-
 function getManifestUrl() {
   var base = window.location.origin;
-  if (currentProxy) {
-    return base + '/' + encodeURIComponent(currentProxy) + '/manifest.json';
-  }
+  if (currentProxy) return base + '/' + encodeURIComponent(currentProxy) + '/manifest.json';
   return base + '/manifest.json';
 }
-
 function updateManifestBox() {
   document.getElementById('manifestBox').textContent = getManifestUrl();
 }
-
 function copyManifest() {
   var url = getManifestUrl();
   var btn = document.querySelector('.btn-copy');
@@ -307,36 +272,24 @@ function copyManifest() {
       btn.textContent = '✅ Copiato!';
       setTimeout(function(){ btn.textContent = '📋 Copia URL Manifest'; }, 2000);
     }).catch(function() { fallbackCopy(url); });
-  } else {
-    fallbackCopy(url);
-  }
+  } else { fallbackCopy(url); }
 }
-
 function fallbackCopy(text) {
   var ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
   try {
     document.execCommand('copy');
     var btn = document.querySelector('.btn-copy');
     btn.textContent = '✅ Copiato!';
     setTimeout(function(){ btn.textContent = '📋 Copia URL Manifest'; }, 2000);
-  } catch(e) {
-    alert('Copia manuale:\\n' + text);
-  }
+  } catch(e) { alert('Copia manuale:\\n' + text); }
   document.body.removeChild(ta);
 }
-
 function installAddon() {
   var manifestUrl = getManifestUrl();
-  var stremioUrl = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
-  window.location.href = stremioUrl;
+  window.location.href = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
 }
-
 updateManifestBox();
 </script>
 </body>
@@ -347,21 +300,17 @@ app.get("/", function(req, res) {
   res.redirect("/configure");
 });
 
-// ── Manifest nella root ───────────────────────────────────────────────────────
 app.get("/manifest.json", function(req, res) {
   res.setHeader("Content-Type", "application/json");
   res.json(manifest);
 });
 
-// ── Addon senza proxy ─────────────────────────────────────────────────────────
 app.use("/", buildRouter(null));
 
-// ── Addon con proxy: /:proxyEncoded/* ─────────────────────────────────────────
 app.use("/:proxyEncoded", function(req, res, next) {
   var raw = req.params.proxyEncoded;
   var skip = ["manifest.json", "configure", "catalog", "meta", "stream", "addon", "favicon.ico"];
   if (skip.indexOf(raw) !== -1) return next();
-
   var proxyUrl;
   try {
     proxyUrl = decodeURIComponent(raw);
@@ -369,11 +318,9 @@ app.use("/:proxyEncoded", function(req, res, next) {
   } catch(e) {
     return next();
   }
-
   buildRouter(proxyUrl)(req, res, next);
 });
 
-// ── Avvio ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, function() {
   console.log("LelloTv avviato su http://localhost:" + PORT);
   console.log("Configurazione: http://localhost:" + PORT + "/configure");
