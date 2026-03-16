@@ -79,18 +79,18 @@ async function handleStream(type, id, clientIp, proxyUrl) {
 
   console.log("Stream: " + ch.name + " | IP: " + clientIp + " | Proxy: " + (proxyUrl || "nessuno"));
 
-  var resolvedUrl = await resolveStream(ch, clientIp, proxyUrl);
+  var resolved = await resolveStream(ch, clientIp, proxyUrl);
 
-  return Promise.resolve({
-    streams: [
-      {
-        name: "LelloTv",
-        title: "📺 " + ch.name + "\n" + (proxyUrl ? "🌐 Via Proxy" : "🔗 Diretto"),
-        url: resolvedUrl,
-        behaviorHints: { notWebReady: false },
-      },
-    ],
+  var streams = resolved.map(function(s) {
+    return {
+      name: "LelloTv",
+      title: "📺 " + ch.name + "\n🔗 " + s.name + (proxyUrl ? " • Via Proxy" : ""),
+      url: s.url,
+      behaviorHints: { notWebReady: false },
+    };
   });
+
+  return Promise.resolve({ streams: streams });
 }
 
 function buildRouter(proxyUrl) {
@@ -225,7 +225,7 @@ input::placeholder{color:#444}
   <label>URL EasyProxy (facoltativo)</label>
   <input type="text" id="proxyInput" placeholder="https://protettore.onrender.com" oninput="onProxyChange()" />
   <p class="hint">
-    Inserisci l'URL della tua istanza EasyProxy per abilitare i canali Vavoo.<br>
+    Inserisci l'URL della tua istanza EasyProxy per abilitare i canali Vavoo e DaddyLive.<br>
     Esempio: <code>https://protettore.onrender.com</code>
   </p>
   <div class="status empty" id="statusBox">Nessun proxy inserito — solo canali diretti disponibili.</div>
@@ -248,7 +248,7 @@ function onProxyChange() {
     try { var u = new URL(currentProxy); valid = (u.protocol === 'http:' || u.protocol === 'https:'); } catch(e) {}
     if (valid) {
       statusBox.className = 'status ok';
-      statusBox.innerHTML = '✅ EasyProxy: <strong>' + new URL(currentProxy).host + '</strong> — canali Vavoo abilitati';
+      statusBox.innerHTML = '✅ EasyProxy: <strong>' + new URL(currentProxy).host + '</strong> — canali Vavoo e DaddyLive abilitati';
     } else {
       statusBox.className = 'status err';
       statusBox.textContent = '⚠️ URL non valido. Esempio: https://protettore.onrender.com';
