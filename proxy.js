@@ -1,34 +1,25 @@
 const axios = require("axios");
 
-async function resolveStream(channel, clientIp, proxyUrl) {
-  const streamUrl = channel.stream;
-  const needsExtractor = channel.extractor === true;
-
-  // Canale Vavoo CON EasyProxy
-  if (needsExtractor && proxyUrl) {
+async function resolveStreamUrl(streamUrl, extractor, name, clientIp, proxyUrl) {
+  if (extractor && proxyUrl) {
     const base = proxyUrl.replace(/\/$/, "");
-
-    // Costruisci direttamente l'URL per EasyProxy
-    // usando /proxy/hls/manifest.m3u8 con ?d= e api_password
-    var finalUrl =
+    const finalUrl =
       base +
       "/proxy/hls/manifest.m3u8?d=" +
       encodeURIComponent(streamUrl) +
       "&api_password=admin";
-
-    console.log("Stream Vavoo via EasyProxy: " + finalUrl);
+    console.log("Stream " + name + " via EasyProxy: " + finalUrl);
     return finalUrl;
   }
 
-  // Canale Vavoo SENZA EasyProxy
-  if (needsExtractor && !proxyUrl) {
-    console.warn("Canale " + channel.name + " richiede EasyProxy ma nessun proxy configurato.");
+  if (extractor && !proxyUrl) {
+    console.warn("Stream " + name + " richiede EasyProxy ma nessun proxy configurato.");
     return streamUrl;
   }
 
-  // Canale normale: segui i redirect
+  // Stream diretto: segui i redirect
   try {
-    const config = {
+    const response = await axios.get(streamUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "X-Forwarded-For": clientIp,
@@ -36,13 +27,35 @@ async function resolveStream(channel, clientIp, proxyUrl) {
       },
       maxRedirects: 10,
       timeout: 10000,
-    };
-    const response = await axios.get(streamUrl, config);
+    });
     return response.request.res.responseUrl || streamUrl;
   } catch (err) {
-    console.error("Errore risoluzione stream: " + err.message);
+    console.error("Errore risoluzione stream " + name + ": " + err.message);
     return streamUrl;
   }
+}
+
+async function resolveStream(channel, clientIp, proxyUrl) {
+  // Canale con sorgenti multiple
+  if (channel.streams && Array.isArray(channel.streams)) {
+    var results = [];
+    for (var i = 0; i < channel.streams.length; i++) {
+      var s = channel.streams[i];
+      var resolved = await resolveStreamUrl(s.url, s.extractor, s.name, clientIp, proxyUrl);
+      results.push({ url: resolved, name: s.name });
+    }
+    return results;
+  }
+
+  // Canale con sorgente singola (retrocompatibile)
+  var resolved = await resolveStreamUrl(
+    channel.stream,
+    channel.extractor === true,
+    channel.name,
+    clientIp,
+    proxyUrl
+  );
+  return [{ url: resolved, name: channel.name }];
 }
 
 module.exports = { resolveStream };
