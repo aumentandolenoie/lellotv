@@ -5,6 +5,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Rai_1_-_Logo_2016.svg/200px-Rai_1_-_Logo_2016.svg.png",
     genre: "Generalista",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=632",
+    extractor: false,
   },
   {
     id: "rai2",
@@ -12,6 +13,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/72/Rai_2_-_Logo_2017.svg/200px-Rai_2_-_Logo_2017.svg.png",
     genre: "Generalista",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=633",
+    extractor: false,
   },
   {
     id: "rai3",
@@ -19,6 +21,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Rai_3_-_Logo_2017.svg/200px-Rai_3_-_Logo_2017.svg.png",
     genre: "Generalista",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=634",
+    extractor: false,
   },
   {
     id: "rainews24",
@@ -26,6 +29,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Rai_News_24_logo.svg/200px-Rai_News_24_logo.svg.png",
     genre: "News",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=1904",
+    extractor: false,
   },
   {
     id: "raisport",
@@ -33,6 +37,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Rai_Sport_logo.svg/200px-Rai_Sport_logo.svg.png",
     genre: "Sport",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=640",
+    extractor: false,
   },
   {
     id: "rai4",
@@ -40,6 +45,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/Rai_4_logo.svg/200px-Rai_4_logo.svg.png",
     genre: "Intrattenimento",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=635",
+    extractor: false,
   },
   {
     id: "rai5",
@@ -47,6 +53,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Rai_5_logo.svg/200px-Rai_5_logo.svg.png",
     genre: "Cultura",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=636",
+    extractor: false,
   },
   {
     id: "raipremium",
@@ -54,6 +61,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Rai_Premium_logo.svg/200px-Rai_Premium_logo.svg.png",
     genre: "Intrattenimento",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=637",
+    extractor: false,
   },
   {
     id: "raigulp",
@@ -61,6 +69,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Rai_Gulp_logo.svg/200px-Rai_Gulp_logo.svg.png",
     genre: "Bambini",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=638",
+    extractor: false,
   },
   {
     id: "raiyoyo",
@@ -68,6 +77,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Rai_Yoyo_logo.svg/200px-Rai_Yoyo_logo.svg.png",
     genre: "Bambini",
     stream: "https://mediapolis.rai.it/relinker/relinkerServlet.htm?cont=639",
+    extractor: false,
   },
   {
     id: "skysportf1",
@@ -75,6 +85,7 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Sky_Sport_F1_logo.png/200px-Sky_Sport_F1_logo.png",
     genre: "Sport",
     stream: "https://www.vavoo.to/play/4246774056/index.m3u8",
+    extractor: true,
   },
 ];
 
