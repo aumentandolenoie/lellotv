@@ -106,8 +106,8 @@ function copyManifest(){
   var url=buildManifestUrl();
   navigator.clipboard.writeText(url).then(function(){
     var btn=document.querySelector('.btn-secondary');
-    btn.textContent='Copiato!';
-    setTimeout(function(){btn.textContent='Copia URL Manifest'},2000);
+    btn.textContent='✅ Copiato!';
+    setTimeout(function(){btn.textContent='📋 Copia URL Manifest'},2000);
   });
 }
 updateStatus();
@@ -199,8 +199,6 @@ function buildAddonRouter(proxyUrl) {
   return addonInstance.getInterface();
 }
 
-serveHTTP(buildAddonRouter(null), { app: app, port: PORT, path: "/" });
-
 app.use("/:proxyEncoded", function(req, res, next) {
   var raw = req.params.proxyEncoded;
   var skip = ["manifest.json", "configure", "catalog", "meta", "stream", "addon"];
@@ -219,6 +217,8 @@ app.use("/:proxyEncoded", function(req, res, next) {
   serveHTTP(buildAddonRouter(proxyUrl), { app: subApp, port: PORT, path: "/" });
   subApp(req, res, next);
 });
+
+serveHTTP(buildAddonRouter(null), { app: app, port: PORT, path: "/" });
 
 console.log("LelloTv avviato su http://localhost:" + PORT);
 console.log("Configurazione: http://localhost:" + PORT + "/configure");
