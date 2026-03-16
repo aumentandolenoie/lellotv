@@ -104,7 +104,6 @@ function buildRouter(proxyUrl) {
   });
 
   const iface = addonInstance.getInterface();
-
   const router = express.Router();
 
   router.get("/manifest.json", function(req, res) {
@@ -170,7 +169,6 @@ app.use(function(req, res, next) {
   next();
 });
 
-// ── /configure ────────────────────────────────────────────────────────────────
 app.get("/configure", function(req, res) {
   var existingProxy = req.query.proxy ? decodeURIComponent(req.query.proxy) : "";
   res.send(`<!DOCTYPE html>
@@ -208,63 +206,106 @@ input::placeholder{color:#555}
 <h1>LelloTv</h1>
 <p class="subtitle">LelloTv - Tv in Diretta</p>
 <label>URL Proxy <span id="proxyBadge" class="badge off">Non attivo</span></label>
-<input type="text" id="proxyInput" placeholder="http://utente:password@host:porta" value="${existingProxy}" oninput="updateStatus()"/>
-<p class="hint">Facoltativo. Formato: <code>http://host:porta</code> oppure <code>http://utente:password@host:porta</code></p>
+<input type="text" id="proxyInput" placeholder="https://mio-proxy.onrender.com" value="${existingProxy}" oninput="updateStatus()"/>
+<p class="hint">Facoltativo. Inserisci l'URL del tuo proxy.<br>
+Esempi: <code>https://mio-proxy.onrender.com</code> oppure <code>http://utente:password@host:porta</code></p>
 <div id="proxyStatus"></div>
 <hr class="divider">
 <button class="btn" onclick="install()">🚀 Installa su Stremio</button>
 <button class="btn btn-secondary" onclick="copyManifest()">📋 Copia URL Manifest</button>
 </div>
 <script>
-function getProxy(){return document.getElementById('proxyInput').value.trim()}
+function getProxy(){
+  return document.getElementById('proxyInput').value.trim();
+}
+
+function isValidUrl(str){
+  if(!str) return false;
+  try{
+    var u = new URL(str);
+    return u.protocol === 'http:' || u.protocol === 'https:' || u.protocol === 'socks5:';
+  } catch(e){
+    return false;
+  }
+}
+
 function updateStatus(){
-  var proxy=getProxy();
-  var badge=document.getElementById('proxyBadge');
-  var status=document.getElementById('proxyStatus');
-  if(!proxy){badge.textContent='Non attivo';badge.className='badge off';status.textContent='Nessun proxy — connessione diretta.';return}
-  try{var u=new URL(proxy);badge.textContent='Attivo';badge.className='badge';status.textContent='Proxy: '+u.host}
-  catch(e){badge.textContent='Formato non valido';badge.className='badge off';status.textContent='Inserisci un URL valido (es: http://host:8080)'}
+  var proxy = getProxy();
+  var badge = document.getElementById('proxyBadge');
+  var status = document.getElementById('proxyStatus');
+
+  if(!proxy){
+    badge.textContent = 'Non attivo';
+    badge.className = 'badge off';
+    status.textContent = 'Nessun proxy — verrà usata la connessione diretta.';
+    return;
+  }
+
+  if(isValidUrl(proxy)){
+    var u = new URL(proxy);
+    badge.textContent = 'Attivo';
+    badge.className = 'badge';
+    status.textContent = 'Proxy rilevato: ' + u.host;
+  } else {
+    badge.textContent = 'Formato non valido';
+    badge.className = 'badge off';
+    status.textContent = 'URL non valido. Esempio corretto: https://mio-proxy.onrender.com';
+  }
 }
+
 function buildManifestUrl(){
-  var proxy=getProxy();
-  var base=window.location.origin;
-  return proxy ? base+'/'+encodeURIComponent(proxy)+'/manifest.json' : base+'/manifest.json';
+  var proxy = getProxy();
+  var base = window.location.origin;
+  if(proxy && isValidUrl(proxy)){
+    return base + '/' + encodeURIComponent(proxy) + '/manifest.json';
+  }
+  return base + '/manifest.json';
 }
+
 function install(){
-  var proxy=getProxy();
-  if(proxy){try{new URL(proxy)}catch(e){alert('URL proxy non valido');return}}
-  var manifestUrl=buildManifestUrl();
-  window.location.href='stremio://'+manifestUrl.replace(/^https?:\/\//,'');
+  var proxy = getProxy();
+  if(proxy && !isValidUrl(proxy)){
+    alert('URL proxy non valido. Correggilo o lascialo vuoto per procedere senza proxy.');
+    return;
+  }
+  var manifestUrl = buildManifestUrl();
+  var stremioUrl = 'stremio://' + manifestUrl.replace(/^https?:\/\//, '');
+  window.location.href = stremioUrl;
 }
+
 function copyManifest(){
-  var url=buildManifestUrl();
+  var proxy = getProxy();
+  if(proxy && !isValidUrl(proxy)){
+    alert('URL proxy non valido. Correggilo o lascialo vuoto.');
+    return;
+  }
+  var url = buildManifestUrl();
   navigator.clipboard.writeText(url).then(function(){
-    var btn=document.querySelector('.btn-secondary');
-    btn.textContent='✅ Copiato!';
-    setTimeout(function(){btn.textContent='📋 Copia URL Manifest'},2000);
+    var btn = document.querySelector('.btn-secondary');
+    btn.textContent = '✅ Copiato!';
+    setTimeout(function(){ btn.textContent = '📋 Copia URL Manifest'; }, 2000);
+  }).catch(function(){
+    prompt('Copia questo URL:', url);
   });
 }
+
 updateStatus();
 </script>
 </body>
 </html>`);
 });
 
-// ── / → redirect a /configure ─────────────────────────────────────────────────
 app.get("/", function(req, res) {
   res.redirect("/configure");
 });
 
-// ── Addon senza proxy montato su /addon ───────────────────────────────────────
 app.use("/addon", buildRouter(null));
 
-// ── manifest.json nella root (per compatibilità Stremio) ─────────────────────
 app.get("/manifest.json", function(req, res) {
   res.setHeader("Content-Type", "application/json");
   res.json(manifest);
 });
 
-// ── Addon con proxy: /:proxyEncoded/* ─────────────────────────────────────────
 app.use("/:proxyEncoded", function(req, res, next) {
   var raw = req.params.proxyEncoded;
   var skip = ["manifest.json", "configure", "catalog", "meta", "stream", "addon", "favicon.ico"];
@@ -281,7 +322,6 @@ app.use("/:proxyEncoded", function(req, res, next) {
   buildRouter(proxyUrl)(req, res, next);
 });
 
-// ── Avvio ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, function() {
   console.log("LelloTv avviato su http://localhost:" + PORT);
   console.log("Configurazione: http://localhost:" + PORT + "/configure");
