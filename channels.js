@@ -1,5 +1,5 @@
 const channels = [
- {
+  {
     id: "skysportf1",
     name: "Sky Sport F1",
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Sky_Sport_F1_logo.png/200px-Sky_Sport_F1_logo.png",
@@ -11,7 +11,7 @@ const channels = [
         name: "Vavoo",
       },
       {
-        url: "https://dlstreams.top/watch.php?id=577",
+        url: "https://dlhd.sx/stream/stream-577.php",
         extractor: true,
         name: "DaddyLive",
       },
@@ -21,8 +21,7 @@ const channels = [
     id: "skyuno",
     name: "Sky Uno",
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Sky_Sport_F1_logo.png/200px-Sky_Sport_F1_logo.png",
-    genre: "Entertainment",
-    stream: "https://vavoo.to/vavoo-iptv/play/2130523218823893ad0255",
+    genre: "Intrattenimento",
     streams: [
       {
         url: "https://vavoo.to/vavoo-iptv/play/2130523218823893ad0255",
@@ -36,7 +35,6 @@ const channels = [
       },
     ],
   },
-  
 ];
 
 module.exports = channels;
