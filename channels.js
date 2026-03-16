@@ -23,7 +23,18 @@ const channels = [
     logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8b/Sky_Sport_F1_logo.png/200px-Sky_Sport_F1_logo.png",
     genre: "Entertainment",
     stream: "https://vavoo.to/vavoo-iptv/play/2130523218823893ad0255",
-    extractor: true,
+    streams: [
+      {
+        url: "https://vavoo.to/vavoo-iptv/play/2130523218823893ad0255",
+        extractor: true,
+        name: "Vavoo",
+      },
+      {
+        url: "https://dlhd.sx/stream/stream-881.php",
+        extractor: true,
+        name: "DaddyLive",
+      },
+    ],
   },
   
 ];
