@@ -1,9 +1,39 @@
 const { addonBuilder } = require("stremio-addon-sdk");
 const express = require("express");
+const axios = require("axios");
 const channels = require("./channels");
 const { resolveStream } = require("./proxy");
 
 const PORT = process.env.PORT || 3000;
+
+// ── Keep-Alive: ping ogni 14 minuti ──────────────────────────────────────────
+const ADDON_URL = process.env.ADDON_URL || null;
+const PROXY_URL_KEEPALIVE = process.env.PROXY_URL || null;
+
+function startKeepAlive() {
+  var targets = [];
+  if (ADDON_URL) targets.push(ADDON_URL);
+  if (PROXY_URL_KEEPALIVE) targets.push(PROXY_URL_KEEPALIVE);
+
+  if (targets.length === 0) {
+    console.log("⚠️ Keep-alive: nessun URL configurato. Imposta ADDON_URL e PROXY_URL nelle variabili ambiente di Render.");
+    return;
+  }
+
+  setInterval(function() {
+    targets.forEach(function(url) {
+      axios.get(url, { timeout: 10000 })
+        .then(function() {
+          console.log("✅ Keep-alive ping OK: " + url);
+        })
+        .catch(function(err) {
+          console.log("⚠️ Keep-alive ping fallito: " + url + " — " + err.message);
+        });
+    });
+  }, 14 * 60 * 1000); // 14 minuti
+
+  console.log("🔄 Keep-alive attivo per: " + targets.join(", "));
+}
 
 const manifest = {
   id: "org.stremio.lellotv",
@@ -325,4 +355,5 @@ app.listen(PORT, function() {
   console.log("LelloTv avviato su http://localhost:" + PORT);
   console.log("Configurazione: http://localhost:" + PORT + "/configure");
   console.log("Manifest: http://localhost:" + PORT + "/manifest.json");
+  startKeepAlive();
 });
