@@ -3,28 +3,22 @@ const express = require("express");
 const channels = require("./channels");
 const { resolveStream } = require("./proxy");
 
-// ─── CONFIGURAZIONE ────────────────────────────────────────────────────────────
-// Imposta qui il tuo proxy se ne hai uno (es: "http://user:pass@host:port")
-// Lascia null per non usare proxy
-const PROXY_URL = process.env.PROXY_URL || null;
-
 const PORT = process.env.PORT || 3000;
-// ───────────────────────────────────────────────────────────────────────────────
 
+// ─── MANIFEST ──────────────────────────────────────────────────────────────────
 const manifest = {
-  id: "org.stremio.iptv.italia",
+  id: "org.stremio.lellotv",
   version: "1.0.0",
-  name: "📺 IPTV Italia Free",
-  description:
-    "Canali italiani gratuiti: Rai e canali free-to-air. Supporto proxy integrato.",
+  name: "LelloTv",
+  description: "LelloTv - Tv in Diretta",
   logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/03/Flag_of_Italy.svg/200px-Flag_of_Italy.svg.png",
   resources: ["catalog", "stream", "meta"],
   types: ["tv"],
   catalogs: [
     {
       type: "tv",
-      id: "iptv-italia-free",
-      name: "📺 Italia Free",
+      id: "lellotv-free",
+      name: "📺 LelloTv",
       extra: [{ name: "genre", isRequired: false }],
     },
   ],
@@ -34,152 +28,141 @@ const manifest = {
   },
 };
 
-const builder = new addonBuilder(manifest);
-
-// ─── CATALOG ───────────────────────────────────────────────────────────────────
-// Restituisce la lista dei canali
-builder.defineCatalogHandler(({ type, id, extra }) => {
-  if (type !== "tv" || id !== "iptv-italia-free") {
-    return Promise.resolve({ metas: [] });
-  }
-
-  let filteredChannels = channels;
-
-  // Filtra per genere se richiesto
-  if (extra && extra.genre) {
-    filteredChannels = channels.filter((ch) => ch.genre === extra.genre);
-  }
-
-  const metas = filteredChannels.map((ch) => ({
-    id: `iptv:${ch.id}`,
-    type: "tv",
-    name: ch.name,
-    poster: ch.logo,
-    logo: ch.logo,
-    background: ch.logo,
-    description: `Canale: ${ch.name} | Genere: ${ch.genre}`,
-    genres: [ch.genre],
-  }));
-
-  return Promise.resolve({ metas });
-});
-
-// ─── META ──────────────────────────────────────────────────────────────────────
-builder.defineMetaHandler(({ type, id }) => {
-  if (type !== "tv" || !id.startsWith("iptv:")) {
-    return Promise.resolve({ meta: null });
-  }
-
-  const channelId = id.replace("iptv:", "");
-  const channel = channels.find((ch) => ch.id === channelId);
-
-  if (!channel) return Promise.resolve({ meta: null });
-
-  return Promise.resolve({
-    meta: {
-      id: `iptv:${channel.id}`,
-      type: "tv",
-      name: channel.name,
-      poster: channel.logo,
-      logo: channel.logo,
-      description: `${channel.name} - Canale free italiano`,
-      genres: [channel.genre],
-    },
-  });
-});
-
-// ─── STREAM ────────────────────────────────────────────────────────────────────
-builder.defineStreamHandler(async ({ type, id }, req) => {
-  if (type !== "tv" || !id.startsWith("iptv:")) {
-    return Promise.resolve({ streams: [] });
-  }
-
-  const channelId = id.replace("iptv:", "");
-  const channel = channels.find((ch) => ch.id === channelId);
-
-  if (!channel) return Promise.resolve({ streams: [] });
-
-  // Recupera l'IP del client
-  const clientIp =
-    (req && req.headers && req.headers["x-forwarded-for"]) ||
-    (req && req.socket && req.socket.remoteAddress) ||
-    "127.0.0.1";
-
-  console.log(`▶ Richiesta stream: ${channel.name} | IP client: ${clientIp}`);
-
-  // Risolvi l'URL finale dello stream
-  const resolvedUrl = await resolveStream(channel.stream, clientIp, PROXY_URL);
-
-  console.log(`✅ Stream risolto: ${resolvedUrl}`);
-
-  return Promise.resolve({
-    streams: [
-      {
-        name: channel.name,
-        title: `📺 ${channel.name}\n🌐 Stream HLS`,
-        url: resolvedUrl,
-        behaviorHints: {
-          notWebReady: false,
-        },
-      },
-    ],
-  });
-});
-
-// ─── AVVIO SERVER ──────────────────────────────────────────────────────────────
-const addonInterface = builder.getInterface();
-
+// ─── APP EXPRESS ───────────────────────────────────────────────────────────────
 const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Endpoint principale dell'addon
-app.use("/", (req, res, next) => {
-  // Aggiungi CORS per Stremio
+// CORS per Stremio
+app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
   next();
 });
 
-// Pagina di benvenuto
-app.get("/", (req, res) => {
-  const installUrl = `stremio://${req.headers.host}/manifest.json`;
+// ─── PAGINA DI CONFIGURAZIONE ──────────────────────────────────────────────────
+app.get("/configure", (req, res) => {
+  // Leggi proxy già configurato se presente nell'URL
+  const existingProxy = req.query.proxy ? decodeURIComponent(req.query.proxy) : "";
+
   res.send(`
     <!DOCTYPE html>
     <html lang="it">
     <head>
       <meta charset="UTF-8">
-      <title>IPTV Italia Free - Stremio Addon</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>LelloTv - Configurazione</title>
       <style>
-        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; 
-               display: flex; flex-direction: column; align-items: center; 
-               justify-content: center; min-height: 100vh; margin: 0; }
-        h1 { color: #e94560; }
-        .btn { background: #e94560; color: white; padding: 15px 30px; 
-               text-decoration: none; border-radius: 8px; font-size: 18px; 
-               margin-top: 20px; display: inline-block; }
-        .btn:hover { background: #c73652; }
-        .info { background: #16213e; padding: 20px; border-radius: 10px; 
-                margin-top: 20px; max-width: 500px; }
-        code { background: #0f3460; padding: 5px 10px; border-radius: 4px; 
-               font-size: 13px; word-break: break-all; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+          font-family: 'Segoe UI', Arial, sans-serif;
+          background: #0d0d1a;
+          color: #eee;
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .card {
+          background: #16213e;
+          border-radius: 16px;
+          padding: 40px;
+          max-width: 480px;
+          width: 100%;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .logo { font-size: 48px; text-align: center; margin-bottom: 10px; }
+        h1 { text-align: center; color: #e94560; font-size: 28px; margin-bottom: 6px; }
+        .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 30px; }
+        label {
+          display: block;
+          font-size: 13px;
+          color: #aaa;
+          margin-bottom: 6px;
+          margin-top: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        input {
+          width: 100%;
+          padding: 12px 16px;
+          background: #0f3460;
+          border: 1px solid #1a4a7a;
+          border-radius: 8px;
+          color: #fff;
+          font-size: 15px;
+          outline: none;
+          transition: border 0.2s;
+        }
+        input:focus { border-color: #e94560; }
+        input::placeholder { color: #555; }
+        .hint {
+          font-size: 12px;
+          color: #666;
+          margin-top: 6px;
+          line-height: 1.5;
+        }
+        .hint code {
+          background: #0a2540;
+          padding: 2px 6px;
+          border-radius: 4px;
+          color: #7ec8e3;
+          font-size: 11px;
+        }
+        .divider {
+          border: none;
+          border-top: 1px solid #1e2d4a;
+          margin: 28px 0;
+        }
+        .btn {
+          display: block;
+          width: 100%;
+          padding: 14px;
+          background: #e94560;
+          color: white;
+          border: none;
+          border-radius: 10px;
+          font-size: 17px;
+          font-weight: bold;
+          cursor: pointer;
+          text-align: center;
+          text-decoration: none;
+          margin-top: 24px;
+          transition: background 0.2s, transform 0.1s;
+        }
+        .btn:hover { background: #c73652; transform: translateY(-1px); }
+        .btn-secondary {
+          background: #1a3a6a;
+          margin-top: 10px;
+          font-size: 14px;
+          font-weight: normal;
+        }
+        .btn-secondary:hover { background: #1e4a8a; }
+        .badge {
+          display: inline-block;
+          background: #1a4a2a;
+          color: #4caf50;
+          border-radius: 20px;
+          padding: 3px 10px;
+          font-size: 12px;
+          margin-left: 8px;
+          vertical-align: middle;
+        }
+        .badge.off {
+          background: #3a1a1a;
+          color: #e94560;
+        }
+        #proxyStatus { margin-top: 16px; font-size: 13px; color: #888; text-align: center; min-height: 20px; }
       </style>
     </head>
     <body>
-      <h1>📺 IPTV Italia Free</h1>
-      <p>Addon Stremio per canali italiani gratuiti</p>
-      <a class="btn" href="${installUrl}">🚀 Installa su Stremio</a>
-      <div class="info">
-        <p><strong>URL Manifest:</strong><br>
-        <code>https://${req.headers.host}/manifest.json</code></p>
-        <p><strong>Canali disponibili:</strong> ${channels.length}</p>
-        <p><strong>Proxy configurato:</strong> ${PROXY_URL ? "✅ Sì" : "❌ No"}</p>
-      </div>
-    </body>
-    </html>
-  `);
-});
+      <div class="card">
+        <div class="logo">📺</div>
+        <h1>LelloTv</h1>
+        <p class="subtitle">LelloTv - Tv in Diretta</p>
 
-serveHTTP(addonInterface, { app, port: PORT });
-
-console.log(`🚀 Addon avviato su http://localhost:${PORT}`);
-console.log(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
-if (PROXY_URL) console.log(`🌐 Proxy attivo: ${PROXY_URL}`);
+        <label>
+          URL Proxy
+          <span id="proxyBadge" class="badge off">Non a
