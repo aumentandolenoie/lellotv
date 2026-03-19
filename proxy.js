@@ -5,38 +5,35 @@ async function resolveStreamUrl(streamUrl, extractor, name, clientIp, proxyUrl) 
 
   const base = proxyUrl.replace(/\/$/, "");
   
-  // Rileviamo se è un link della famiglia DaddyLive
+  // Aggiungiamo dlstreams alla lista dei siti riconosciuti
   const isDaddyLive = streamUrl.includes("daddylive") || 
                       streamUrl.includes("dlhd") || 
-                      streamUrl.includes("dagro") ||
-                      streamUrl.includes("aliez");
+                      streamUrl.includes("dlstreams") || 
+                      streamUrl.includes("dagro");
 
-  // PASSWORD: Cambiala se diversa da "admin"
   const API_PWD = "admin"; 
 
   if (isDaddyLive) {
-    // 🔍 DINAMISMO: Estraiamo il dominio esatto dall'URL (es: https://dlhd.sx)
+    // Usiamo l'URL che hai trovato come Referer
     const urlObj = new URL(streamUrl);
-    const origin = urlObj.origin; // Prende "https://dlhd.sx" o quello che serve
-    const referer = streamUrl;    // Il referer esatto della pagina dello stream
+    const origin = urlObj.origin; 
 
     const params = new URLSearchParams({
       url: streamUrl,
-      h_Referer: referer,
+      h_Referer: streamUrl, // Il referer deve essere l'URL dello stream stesso
       h_Origin: origin,
       h_User_Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
       redirect_stream: "true",
       api_password: API_PWD
     });
 
-    // Usiamo l'endpoint /extractor/video
+    // Endpoint extractor del tuo Protettore-OK
     const finalUrl = `${base}/extractor/video?${params.toString()}`;
 
-    console.log(`🛡️ [TUNNEL] ${name} -> Origin: ${origin}`);
+    console.log(`📡 [DADDY-DEBUG] Canale: ${name} | URL: ${streamUrl}`);
     return finalUrl;
   }
 
-  // Fallback per altri (Vavoo, etc)
   if (extractor) {
     return `${base}/extractor/video?url=${encodeURIComponent(streamUrl)}&api_password=${API_PWD}&redirect_stream=true`;
   }
