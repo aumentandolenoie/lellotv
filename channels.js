@@ -29,7 +29,7 @@ const channels = [
         name: "Vavoo",
       },
       {
-        url: "https://dlhd.sx/stream/stream-881.php",
+        url: "https://dlstreams.top/stream/stream-881.php",
         extractor: true,
         name: "DaddyLive",
       },
