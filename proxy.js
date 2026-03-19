@@ -1,89 +1,77 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
-const fetch = require("node-fetch");
+const axios = require("axios");
 
-// Configurazione - Modifica questi valori se necessario
-const PROXY_URL = "http://192.168.1.192:20000"; // L'indirizzo del tuo server Python
-const API_PWD = "admin";
+ async function resolveStreamUrl(streamUrl, extractor, name, clientIp, proxyUrl) {
 
-const manifest = {
-    id: "org.daddylive.vavoo.italy",
-    version: "1.1.0",
-    name: "DaddyLive & Vavoo Proxy",
-    description: "Canali TV da DaddyLive e Vavoo tramite HLS Proxy",
-    resources: ["stream", "catalog"],
-    types: ["tv"],
-    catalogs: [
-        { type: "tv", id: "daddylive_italy", name: "DaddyLive Italy" }
-    ]
-};
-
-const builder = new addonBuilder(manifest);
-
-// Logica per caricare i canali (Catalogo)
-builder.defineCatalogHandler(async (args) => {
-    // Qui solitamente carichi la lista canali dal tuo server Python
-    try {
-        const resp = await fetch(`${PROXY_URL}/channels?api_password=${API_PWD}`);
-        const channels = await resp.json();
-        return { metas: channels };
-    } catch (e) {
-        return { metas: [] };
-    }
-});
-
-// Logica per generare i link quando clicchi su un canale (Stream)
-builder.defineStreamHandler(async (args) => {
-    const [type, id] = args.id.split(":");
-    try {
-        // Chiede al server Python i link disponibili (Vavoo, Daddy, ecc)
-        const resp = await fetch(`${PROXY_URL}/streams/${id}?api_password=${API_PWD}`);
-        const data = await resp.json();
-        
-        const streams = await Promise.all(data.streams.map(async (s) => {
-            return {
-                name: s.name,
-                title: s.title,
-                url: await resolveStreamUrl(s.url, s.extractor, s.name, "", PROXY_URL)
-            };
-        }));
-
-        return { streams };
-    } catch (e) {
-        return { streams: [] };
-    }
-});
-
-/**
- * LA NOSTRA FUNZIONE MODIFICATA
- */
-async function resolveStreamUrl(streamUrl, extractor, name, clientIp, proxyUrl) {
     if (!proxyUrl) return streamUrl;
+
     const base = proxyUrl.replace(/\/$/, "");
+
     const API_PWD = "admin"; 
 
+
+    // Forza il riconoscimento DaddyLive se l'URL contiene questi termini
+
     const isDaddy = streamUrl.includes("dlhd") || 
+
                     streamUrl.includes("daddylive") || 
+
                     streamUrl.includes("dlstreams") || 
+
                     streamUrl.includes("lovecdn") || 
+
                     streamUrl.includes("lovetier") ||
+
                     streamUrl.includes("ksohls");
 
+
     if (isDaddy) {
+
+        // Se l'URL è già un manifest .m3u8, dobbiamo assicurarci di passare i referer al proxy HLS
+
         const targetReferer = "https://dlstreams.top/";
+
+        
+
         const params = new URLSearchParams({
+
             url: streamUrl,
+
             h_Referer: targetReferer,
+
             h_Origin: "https://dlstreams.top",
+
             h_User_Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+
             redirect_stream: "true",
+
             api_password: API_PWD
+
         });
 
+
         return `${base}/extractor/video?${params.toString()}`;
+
     }
 
+
+    // Default per Vavoo e altri
+
     return `${base}/extractor/video?url=${encodeURIComponent(streamUrl)}&api_password=${API_PWD}&redirect_stream=true`;
+
+} 
+
+async function resolveStream(channel, clientIp, proxyUrl) {
+    if (channel.streams && Array.isArray(channel.streams)) {
+        var results = [];
+        for (var i = 0; i < channel.streams.length; i++) {
+            var s = channel.streams[i];
+            var resolved = await resolveStreamUrl(s.url, s.extractor || channel.extractor, s.name || channel.name, clientIp, proxyUrl);
+            results.push({ url: resolved, name: s.name || channel.name });
+        }
+        return results;
+    }
+    var resolved = await resolveStreamUrl(channel.stream, channel.extractor === true, channel.name, clientIp, proxyUrl);
+    return [{ url: resolved, name: channel.name }];
 }
 
-// Avvia il server dell'addon sulla porta 7000 (o quella che usi di solito)
-serveHTTP(builder.getInterface(), { port: 7000 });
+module.exports = { resolveStream };
