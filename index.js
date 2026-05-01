@@ -189,142 +189,78 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// ─── Vavoo: legge M3U e filtra Italia ────────────────────────────────────────
+// ─── Vavoo: JSON API + filtro Italia ─────────────────────────────────────────
 //
-// Vavoo non espone un JSON pubblico diretto.
-// L'M3U è il metodo standard usato da tutti i proxy/addon open source.
-// Gli URL stream sono nel formato https://huhu.to/play/<id>/index.m3u8
-// e richiedono User-Agent: VAVOO/2.6 per funzionare.
+// L'API reale di Vavoo restituisce un JSON array con questa struttura:
+//   [{ country: "Italy", id: 1101559666, name: "CANALE 5 (7)", p: 23 }, ...]
 //
-// Proviamo più URL noti (alcuni cambiano nel tempo) con fallback.
-
-const VAVOO_M3U_URLS = [
-  'https://vavoo.to/channels',          // endpoint primario (può restituire M3U o JSON)
-  'https://www2.vavoo.to/channels',     // mirror
-];
+// L'URL stream si costruisce come:
+//   https://vavoo.to/play/<id>/index.m3u8
+// e richiede User-Agent: VAVOO/2.6
 
 const VAVOO_HEADERS = {
   'User-Agent': 'VAVOO/2.6',
   'Accept': '*/*',
 };
 
-// Parsa una riga #EXTINF e restituisce { name, group, logo }
-function parseExtinf(line) {
-  const name = line.match(/,(.+)$/) ?.[1]?.trim() || '';
-  const group = line.match(/group-title="([^"]*)"/) ?.[1] || '';
-  const logo  = line.match(/tvg-logo="([^"]*)"/)   ?.[1] || '';
-  const id    = line.match(/tvg-id="([^"]*)"/)     ?.[1] || '';
-  return { name, group, logo, id };
-}
-
-// Estrae l'ID numerico dall'URL huhu.to/play/<id>/...
-function extractHuhuId(url) {
-  const m = url.match(/play\/(\d+)\//);
-  return m ? m[1] : null;
-}
-
 async function fetchVavooItaly() {
-  let m3uText = null;
-  let lastErr = null;
+  try {
+    const res = await fetch('https://vavoo.to/channels', {
+      headers: VAVOO_HEADERS,
+      timeout: 15000,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-  for (const url of VAVOO_M3U_URLS) {
-    try {
-      const res = await fetch(url, { headers: VAVOO_HEADERS, timeout: 15000 });
-      if (!res.ok) { lastErr = `HTTP ${res.status} da ${url}`; continue; }
-      const ct = res.headers.get('content-type') || '';
-      const text = await res.text();
+    const json = await res.json();
+    if (!Array.isArray(json)) throw new Error('Risposta non è un array');
 
-      // Se JSON array, proviamo a trattarlo come lista canali
-      if (ct.includes('json') || text.trim().startsWith('[')) {
-        try {
-          const json = JSON.parse(text);
-          if (Array.isArray(json)) {
-            // Formato: [{ id, name, group, logo, url }, ...]
-            const italy = json.filter(ch => {
-              const g = (ch.group || ch.country || '').toLowerCase();
-              const n = (ch.name || '').toLowerCase();
-              return g.includes('ital') || g.includes(' it') || g === 'it'
-                || n.includes('rai') || n.includes('mediaset') || n.includes('canale 5')
-                || n.includes('italia');
-            });
-            if (italy.length > 0) {
-              console.log(`[Vavoo] JSON: trovati ${italy.length} canali italiani su ${json.length} totali`);
-              return italy;
-            }
-          }
-        } catch (_) {}
-      }
+    // Filtra solo canali italiani (country === "Italy")
+    const italy = json.filter(ch => ch.country === 'Italy');
 
-      // Altrimenti parsare come M3U
-      if (text.includes('#EXTM3U') || text.includes('#EXTINF')) {
-        m3uText = text;
-        console.log(`[Vavoo] M3U ricevuto da ${url} (${text.length} byte)`);
-        break;
-      }
+    // Ordina per "p" (posizione/popolarità nella lista Vavoo)
+    italy.sort((a, b) => a.p - b.p);
 
-      lastErr = `Risposta non riconosciuta da ${url}`;
-    } catch (e) {
-      lastErr = e.message;
-      console.error(`[Vavoo] Errore fetch ${url}:`, e.message);
-    }
-  }
+    // Deduplicazione: se ci sono più voci con stesso nome base (es. "RAI 1 (6)" e "RAI 1 (7)"),
+    // teniamo solo la prima (quella con p più basso = più affidabile)
+    const seen = new Set();
+    const deduped = italy.filter(ch => {
+      // Nome base = nome senza il suffisso " (N)"
+      const base = ch.name.replace(/\s*\(\d+\)\s*$/, '').trim().toLowerCase();
+      if (seen.has(base)) return false;
+      seen.add(base);
+      return true;
+    });
 
-  if (!m3uText) {
-    console.error('[Vavoo] Nessuna sorgente disponibile:', lastErr);
+    console.log(`[Vavoo] Totale: ${json.length} | Italia: ${italy.length} | Deduplicati: ${deduped.length}`);
+    return deduped;
+
+  } catch (e) {
+    console.error('[Vavoo] fetchVavooItaly error:', e.message);
     return [];
   }
-
-  // Parsa M3U
-  const lines = m3uText.split('\n').map(l => l.trim()).filter(Boolean);
-  const channels = [];
-  let meta = null;
-
-  for (const line of lines) {
-    if (line.startsWith('#EXTINF')) {
-      meta = parseExtinf(line);
-    } else if (line.startsWith('http') && meta) {
-      const group = (meta.group || '').toLowerCase();
-      const name  = (meta.name  || '').toLowerCase();
-
-      // Filtro Italia: group-title contiene Italy/Italia/IT, oppure nome noto
-      const isItaly = group.includes('ital') || group === 'it' || group.includes(' it')
-        || name.includes('rai') || name.includes('mediaset') || name.includes('italia');
-
-      if (isItaly) {
-        const huhuId = extractHuhuId(line);
-        if (huhuId) {
-          channels.push({
-            id:    huhuId,
-            name:  meta.name,
-            group: meta.group,
-            logo:  meta.logo,
-            url:   line,
-          });
-        }
-      }
-      meta = null;
-    } else if (!line.startsWith('#')) {
-      meta = null;
-    }
-  }
-
-  console.log(`[Vavoo] Canali italiani trovati: ${channels.length}`);
-  return channels;
 }
 
-async function resolveVavooStream(channelId, streamUrl, proxyUrl, proxyPassword) {
-  // streamUrl = URL originale dall'M3U (es. https://huhu.to/play/<id>/index.m3u8)
-  // Se non ce l'abbiamo (richiesta solo con id), ricostruiamo
-  const url = streamUrl || `https://huhu.to/play/${channelId}/index.m3u8`;
+// Costruisce l'URL stream Vavoo dall'ID canale
+// Formato: https://vavoo.to/play/<id>/index.m3u8
+function buildVavooStreamUrl(channelId) {
+  return `https://vavoo.to/play/${channelId}/index.m3u8`;
+}
+
+function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
+  const streamUrl = buildVavooStreamUrl(channelId);
 
   if (!proxyUrl) {
-    return { url, behaviorHints: { headers: { 'User-Agent': 'VAVOO/2.6' } } };
+    // Senza proxy: stream diretto con header necessari
+    return {
+      url: streamUrl,
+      behaviorHints: { notWebReady: false, headers: { 'User-Agent': 'VAVOO/2.6' } },
+    };
   }
 
+  // Con EasyProxy: usa /proxy/manifest.m3u8 passando l'header User-Agent
   const base = proxyUrl.replace(/\/$/, '');
-  // EasyProxy proxy/manifest.m3u8 con header VAVOO
   const proxied = `${base}/proxy/manifest.m3u8`
-    + `?url=${encodeURIComponent(url)}`
+    + `?url=${encodeURIComponent(streamUrl)}`
     + `&h_User-Agent=VAVOO%2F2.6`
     + `&password=${encodeURIComponent(proxyPassword || '')}`;
   return { url: proxied };
@@ -432,11 +368,9 @@ builder.defineCatalogHandler(async ({ type, id, extra, config: configRaw }) => {
       metas: list.slice(skip, skip + PAGE).map(ch => ({
         id:          `lellotv-vavoo-${ch.id}`,
         type:        'tv',
-        name:        ch.name || `Ch ${ch.id}`,
-        poster:      ch.logo || undefined,
-        logo:        ch.logo || undefined,
-        genres:      ch.group ? [ch.group] : ['Italia'],
-        description: `Vavoo – ${ch.group || 'Italia'}`,
+        name:        ch.name,
+        genres:      ['Italia'],
+        description: `🇮🇹 Vavoo Italia`,
       })),
     };
   }
@@ -469,9 +403,7 @@ builder.defineMetaHandler(async ({ type, id, config: configRaw }) => {
     const channels = await getCachedVavoo();
     const ch = channels.find(c => String(c.id) === chId);
     if (!ch) return { meta: null };
-    return { meta: { id, type: 'tv', name: ch.name, poster: ch.logo, logo: ch.logo,
-      genres: ch.group ? [ch.group] : ['Italia'],
-      description: `Vavoo – ${ch.group || 'Italia'}` } };
+    return { meta: { id, type: 'tv', name: ch.name, genres: ['Italia'], description: '🇮🇹 Vavoo Italia' } };
   }
   if (id.startsWith('lellotv-dl-')) {
     const chId = id.replace('lellotv-dl-', '');
@@ -492,10 +424,7 @@ builder.defineStreamHandler(async ({ type, id, config: configRaw }) => {
 
   if (id.startsWith('lellotv-vavoo-')) {
     const chId = id.replace('lellotv-vavoo-', '');
-    // Recuperiamo l'URL originale dalla cache per usarlo direttamente
-    const channels = await getCachedVavoo();
-    const ch = channels.find(c => String(c.id) === chId);
-    const stream = await resolveVavooStream(chId, ch && ch.url, config.proxyUrl, config.proxyPassword);
+    const stream = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
     return { streams: [{ ...stream, name: 'LelloTV', description: '🇮🇹 Vavoo Italia' }] };
   }
 
