@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LelloTV – Configurazione</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #23233a;
+      --border: #2e2e4a;
+      --accent: #7c3aed;
+      --accent-light: #9d5cf7;
+      --accent-glow: rgba(124,58,237,0.25);
+      --text: #e8e8f0;
+      --text-muted: #8888aa;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 560px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--accent) 0%, #4f1fb8 100%);
+      padding: 32px 28px 28px;
+      text-align: center;
+      position: relative;
+    }
+    .header::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-light), transparent);
+    }
+    .logo { font-size: 48px; margin-bottom: 8px; }
+    .header h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .header p { color: rgba(255,255,255,0.7); font-size: 13px; margin-top: 4px; }
+
+    .body { padding: 28px; }
+
+    .section {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--accent-light);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title::before {
+      content: '';
+      display: block;
+      width: 3px;
+      height: 14px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    input[type="text"], input[type="password"], input[type="url"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    input::placeholder { color: var(--text-muted); opacity: 0.6; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .toggle-label { font-size: 14px; font-weight: 500; }
+    .toggle-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--accent); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+    .source-sub {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .source-sub[data-hidden="true"] { display: none; }
+
+    .btn-generate {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      margin-top: 4px;
+    }
+    .btn-generate:hover { opacity: 0.9; }
+    .btn-generate:active { transform: scale(0.98); }
+
+    .result-box {
+      display: none;
+      margin-top: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .result-box.visible { display: block; }
+
+    .install-url {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--accent-light);
+      word-break: break-all;
+      font-family: 'Courier New', monospace;
+      margin-bottom: 12px;
+    }
+
+    .btn-row { display: flex; gap: 10px; }
+    .btn-copy, .btn-install {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    .btn-copy { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-install { background: var(--accent); color: #fff; }
+    .btn-copy:hover, .btn-install:hover { opacity: 0.8; }
+
+    .note {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 16px;
+      line-height: 1.5;
+    }
+    .note a { color: var(--accent-light); text-decoration: none; }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+      background: var(--accent-glow);
+      color: var(--accent-light);
+      border: 1px solid var(--accent);
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="logo">📺</div>
+      <h1>LelloTV</h1>
+      <p>Canali live da Vavoo &amp; DLStreams tramite EasyProxy</p>
+    </div>
+    <div class="body">
+
+      <!-- EasyProxy config -->
+      <div class="section">
+        <div class="section-title">EasyProxy</div>
+        <div class="field">
+          <label>Indirizzo EasyProxy (es. https://tua-proxy.onrender.com)</label>
+          <input type="url" id="proxyUrl" placeholder="https://..." />
+        </div>
+        <div class="field">
+          <label>Password EasyProxy</label>
+          <input type="password" id="proxyPassword" placeholder="ep" />
+        </div>
+      </div>
+
+      <!-- Sorgenti -->
+      <div class="section">
+        <div class="section-title">Sorgenti</div>
+
+        <!-- Vavoo -->
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">🎯 Vavoo <span class="badge">Gratuito</span></div>
+            <div class="toggle-desc">Migliaia di canali live internazionali</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="vavooEnabled" checked onchange="toggleSub('vavooSub', this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="source-sub" id="vavooSub">
+          <div class="note" style="text-align:left;">Nessuna chiave richiesta – Vavoo è accessibile liberamente tramite EasyProxy.</div>
+        </div>
+
+        <!-- DLStreams -->
+        <div class="toggle-row" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+          <div>
+            <div class="toggle-label">⚡ DLStreams (DaddyLive) <span class="badge">API Key</span></div>
+            <div class="toggle-desc">Sport live, eventi, canali internazionali</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="dlEnabled" onchange="toggleSub('dlSub', this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="source-sub" id="dlSub" data-hidden="true">
+          <div class="field">
+            <label>DLStreams API Key</label>
+            <input type="text" id="dlApiKey" placeholder="La tua chiave API dlstreams.com" />
+          </div>
+          <div class="note" style="text-align:left;">
+            Richiedi la tua API key su <a href="https://dlstreams.com/contact.php" target="_blank">dlstreams.com/contact.php</a> oppure via <a href="mailto:livetvon@protonmail.com">email</a>.
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-generate" onclick="generateConfig()">✨ Genera link di installazione</button>
+
+      <div class="result-box" id="resultBox">
+        <div class="section-title">Link di installazione</div>
+        <div class="install-url" id="installUrl"></div>
+        <div class="btn-row">
+          <button class="btn-copy" onclick="copyUrl()">📋 Copia URL</button>
+          <button class="btn-install" onclick="installAddon()">⚡ Installa su Stremio</button>
+        </div>
+      </div>
+
+      <p class="note">
+        Funziona anche con <strong>Nuvio</strong>.<br/>
+        Per Nuvio: copia l'URL e aggiungilo manualmente come addon esterno.<br/>
+        Addon open source — nessun dato raccolto.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    function toggleSub(id, show) {
+      const el = document.getElementById(id);
+      el.dataset.hidden = !show;
+      el.style.display = show ? 'block' : 'none';
+    }
+
+    // Init visibility
+    toggleSub('vavooSub', document.getElementById('vavooEnabled').checked);
+    toggleSub('dlSub', document.getElementById('dlEnabled').checked);
+
+    async function generateConfig() {
+      const proxyUrl = document.getElementById('proxyUrl').value.trim();
+      const proxyPassword = document.getElementById('proxyPassword').value.trim();
+      const dlApiKey = document.getElementById('dlApiKey').value.trim();
+      const vavooEnabled = document.getElementById('vavooEnabled').checked;
+      const dlEnabled = document.getElementById('dlEnabled').checked;
+
+      if (!vavooEnabled && !dlEnabled) {
+        alert('Attiva almeno una sorgente!');
+        return;
+      }
+
+      const res = await fetch('/api/encode-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proxyUrl, proxyPassword, dlApiKey, vavooEnabled, dlEnabled }),
+      });
+      const { configB64 } = await res.json();
+
+      const base = window.location.origin;
+      const url = `${base}/${configB64}/manifest.json`;
+      document.getElementById('installUrl').textContent = url;
+      document.getElementById('resultBox').classList.add('visible');
+      window._installUrl = url;
+    }
+
+    function copyUrl() {
+      navigator.clipboard.writeText(window._installUrl).then(() => {
+        const btn = document.querySelector('.btn-copy');
+        btn.textContent = '✅ Copiato!';
+        setTimeout(() => btn.textContent = '📋 Copia URL', 2000);
+      });
+    }
+
+    function installAddon() {
+      const stremioUrl = 'stremio://' + window._installUrl.replace(/^https?:\/\//, '');
+      window.open(stremioUrl, '_blank');
+    }
+  </script>
+</body>
+</html>
