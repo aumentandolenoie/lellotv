@@ -450,18 +450,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Pagina configurazione ──
 app.get('/', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(CONFIGURE_HTML);
 });
 
+// ── API encode config ──
 app.post('/api/encode-config', (req, res) => {
   const { proxyUrl, proxyPassword, dlApiKey, vavooEnabled, dlEnabled } = req.body;
   const config = { proxyUrl, proxyPassword, dlApiKey, vavooEnabled: !!vavooEnabled, dlEnabled: !!dlEnabled };
   res.json({ configB64: Buffer.from(JSON.stringify(config)).toString('base64') });
 });
 
-// Endpoint di debug: mostra i canali Vavoo trovati
+// ── Debug ──
 app.get('/debug/vavoo', async (req, res) => {
   try {
     const ch = await getCachedVavoo();
@@ -471,36 +473,139 @@ app.get('/debug/vavoo', async (req, res) => {
   }
 });
 
-function handleAddon(resource, req, res) {
-  const configRaw = req.params.config || 'default';
-  const id   = decodeURIComponent(req.params.id || '');
-  const type = req.params.type || 'tv';
-  const extra = {};
-  if (req.query.search) extra.search = req.query.search;
-  if (req.query.skip)   extra.skip   = req.query.skip;
-  if (req.params.skip)  extra.skip   = req.params.skip;
+// ── Estrai config dal path ──
+// Pattern URL Stremio:
+//   senza config: /catalog/tv/lellotv-vavoo.json
+//   con config:   /eyJwcm94...==/catalog/tv/lellotv-vavoo.json
+// IMPORTANTE: il check "senza config" va prima, usando le keyword fisse
+const RESOURCES = '(catalog|meta|stream)';
 
-  addonInterface.get({ resource, type, id, extra, config: configRaw })
-    .then(r => res.json(r))
-    .catch(e => {
-      console.error(`[${resource}] ${id}:`, e.message);
-      res.status(500).json({ error: e.message });
-    });
+function extractFromPath(reqPath) {
+  // 1. Senza config: inizia con /catalog|meta|stream
+  let m = reqPath.match(new RegExp(`^\\/${RESOURCES}\\/([^/]+)\\/([^/]+)\\.json$`));
+  if (m) return { config: 'default', resource: m[1], type: m[2], id: m[3] };
+
+  // 2. Senza config con skip: /catalog/tv/id/skip=100.json
+  m = reqPath.match(new RegExp(`^\\/catalog\\/([^/]+)\\/([^/]+)\\/skip=(\\d+)\\.json$`));
+  if (m) return { config: 'default', resource: 'catalog', type: m[1], id: m[2], skip: m[3] };
+
+  // 3. Con config: /BASE64/catalog|meta|stream/type/id.json
+  m = reqPath.match(new RegExp(`^\\/([^/]+)\\/${RESOURCES}\\/([^/]+)\\/([^/]+)\\.json$`));
+  if (m) return { config: m[1], resource: m[2], type: m[3], id: m[4] };
+
+  // 4. Con config e skip: /BASE64/catalog/type/id/skip=100.json
+  m = reqPath.match(new RegExp(`^\\/([^/]+)\\/catalog\\/([^/]+)\\/([^/]+)\\/skip=(\\d+)\\.json$`));
+  if (m) return { config: m[1], resource: 'catalog', type: m[2], id: m[3], skip: m[4] };
+
+  return null;
 }
 
-app.get('/manifest.json', (req, res) => res.json(addonInterface.manifest));
-app.get('/:config/manifest.json', (req, res) => res.json(addonInterface.manifest));
+// ── Router universale ──
+app.use(async (req, res, next) => {
+  if (req.method !== 'GET') return next();
 
-app.get('/catalog/:type/:id.json', (req, res) => handleAddon('catalog', req, res));
-app.get('/:config/catalog/:type/:id.json', (req, res) => handleAddon('catalog', req, res));
-app.get('/catalog/:type/:id/skip=:skip.json', (req, res) => handleAddon('catalog', req, res));
-app.get('/:config/catalog/:type/:id/skip=:skip.json', (req, res) => handleAddon('catalog', req, res));
+  // Manifest
+  if (req.path === '/manifest.json' || req.path.endsWith('/manifest.json')) {
+    return res.json(addonInterface.manifest);
+  }
 
-app.get('/meta/:type/:id.json', (req, res) => handleAddon('meta', req, res));
-app.get('/:config/meta/:type/:id.json', (req, res) => handleAddon('meta', req, res));
+  const parts = extractFromPath(req.path);
+  if (!parts) return next();
 
-app.get('/stream/:type/:id.json', (req, res) => handleAddon('stream', req, res));
-app.get('/:config/stream/:type/:id.json', (req, res) => handleAddon('stream', req, res));
+  const { config: configRaw, resource, type, id } = parts;
+  const skip   = parts.skip || req.query.skip || '0';
+  const search = req.query.search || '';
+
+  console.log(`[${resource}] config=${configRaw.slice(0,8)}… id=${id} skip=${skip} search=${search}`);
+
+  try {
+    const config = parseConfig(configRaw);
+    let result;
+
+    // ── CATALOG ──
+    if (resource === 'catalog') {
+      const searchLow = search.toLowerCase();
+      const skipN = parseInt(skip, 10) || 0;
+
+      if (id === 'lellotv-vavoo') {
+        const channels = await getCachedVavoo();
+        const list = searchLow
+          ? channels.filter(c => c.name.toLowerCase().includes(searchLow))
+          : channels;
+        result = {
+          metas: list.slice(skipN, skipN + PAGE).map(ch => ({
+            id:     `lellotv-vavoo-${ch.id}`,
+            type:   'tv',
+            name:   ch.name,
+            genres: ['Italia'],
+            description: '🇮🇹 Vavoo Italia',
+          })),
+        };
+      } else if (id === 'lellotv-dl') {
+        const channels = await getCachedDL(config.dlApiKey);
+        const list = searchLow
+          ? channels.filter(c => (c.channel_name || '').toLowerCase().includes(searchLow))
+          : channels;
+        result = {
+          metas: list.slice(skipN, skipN + PAGE).map(ch => {
+            const logo = ch.logo_url
+              ? (ch.logo_url.startsWith('http') ? ch.logo_url : `https://dlstreams.com/${ch.logo_url}`)
+              : undefined;
+            return { id: `lellotv-dl-${ch.channel_id}`, type: 'tv', name: ch.channel_name, poster: logo, logo };
+          }),
+        };
+      } else {
+        result = { metas: [] };
+      }
+
+    // ── META ──
+    } else if (resource === 'meta') {
+      if (id.startsWith('lellotv-vavoo-')) {
+        const chId = id.replace('lellotv-vavoo-', '');
+        const channels = await getCachedVavoo();
+        const ch = channels.find(c => String(c.id) === chId);
+        result = ch
+          ? { meta: { id, type: 'tv', name: ch.name, genres: ['Italia'] } }
+          : { meta: null };
+      } else if (id.startsWith('lellotv-dl-')) {
+        const chId = id.replace('lellotv-dl-', '');
+        const channels = await getCachedDL(config.dlApiKey);
+        const ch = channels.find(c => String(c.channel_id) === chId);
+        if (ch) {
+          const logo = ch.logo_url
+            ? (ch.logo_url.startsWith('http') ? ch.logo_url : `https://dlstreams.com/${ch.logo_url}`)
+            : undefined;
+          result = { meta: { id, type: 'tv', name: ch.channel_name, poster: logo, logo } };
+        } else {
+          result = { meta: null };
+        }
+      } else {
+        result = { meta: null };
+      }
+
+    // ── STREAM ──
+    } else if (resource === 'stream') {
+      if (id.startsWith('lellotv-vavoo-')) {
+        const chId = id.replace('lellotv-vavoo-', '');
+        const stream = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+        result = { streams: [{ ...stream, name: 'LelloTV', description: '🇮🇹 Vavoo Italia' }] };
+      } else if (id.startsWith('lellotv-dl-')) {
+        const chId = id.replace('lellotv-dl-', '');
+        const stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
+        result = { streams: stream ? [{ ...stream, name: 'LelloTV', description: '⚡ DLStreams' }] : [] };
+      } else {
+        result = { streams: [] };
+      }
+    } else {
+      return next();
+    }
+
+    res.json(result);
+  } catch (e) {
+    console.error(`[ERROR] ${resource} ${id}:`, e.message, e.stack);
+    res.status(500).json({ error: e.message, stack: e.stack });
+  }
+});
 
 app.use((req, res) => res.status(404).json({ error: 'Not found', path: req.path }));
 
