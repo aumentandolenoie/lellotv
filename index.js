@@ -252,26 +252,30 @@ function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
   const pwd = encodeURIComponent(proxyPassword || '');
 
   if (!base) {
+    // Senza proxy: stream diretto, funziona solo se il player rispetta behaviorHints
     return {
       url: streamUrl,
       behaviorHints: { notWebReady: false, headers: { 'User-Agent': 'VAVOO/2.6' } },
     };
   }
 
-  // EasyProxy ha un extractor nativo per Vavoo che gestisce il token di autenticazione.
-  // /extractor/video con redirect_stream=true risolve il vero HLS autenticato.
-  const extracted = `${base}/extractor/video`
+  // EasyProxy /proxy/hls/manifest.m3u8 è l'endpoint HLS proxy interno.
+  // Passiamo l'URL Vavoo + User-Agent VAVOO/2.6 come header forzato.
+  // Questo bypassa l'extractor (che usa UA Chrome) e forza il UA corretto.
+  const hlsProxy = `${base}/proxy/hls/manifest.m3u8`
     + `?d=${encodeURIComponent(streamUrl)}`
-    + `&redirect_stream=true`
-    + `&password=${pwd}`;
+    + `&h_User-Agent=VAVOO%2F2.6`
+    + `&h_Referer=https%3A%2F%2Fvavoo.to%2F`
+    + `&api_password=${pwd}`;
 
-  // Fallback: proxy diretto con User-Agent
+  // Fallback: proxy manifest generico con User-Agent
   const proxiedFallback = `${base}/proxy/manifest.m3u8`
     + `?url=${encodeURIComponent(streamUrl)}`
     + `&h_User-Agent=VAVOO%2F2.6`
-    + `&password=${pwd}`;
+    + `&h_Referer=https%3A%2F%2Fvavoo.to%2F`
+    + `&api_password=${pwd}`;
 
-  return { url: extracted, proxiedFallback };
+  return { url: hlsProxy, proxiedFallback };
 }
 
 // ─── DLStreams helpers ────────────────────────────────────────────────────────
