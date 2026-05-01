@@ -248,22 +248,30 @@ function buildVavooStreamUrl(channelId) {
 
 function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
   const streamUrl = buildVavooStreamUrl(channelId);
+  const base = (proxyUrl || '').replace(/\/$/, '');
+  const pwd = encodeURIComponent(proxyPassword || '');
 
-  if (!proxyUrl) {
-    // Senza proxy: stream diretto con header necessari
+  if (!base) {
     return {
       url: streamUrl,
       behaviorHints: { notWebReady: false, headers: { 'User-Agent': 'VAVOO/2.6' } },
     };
   }
 
-  // Con EasyProxy: usa /proxy/manifest.m3u8 passando l'header User-Agent
-  const base = proxyUrl.replace(/\/$/, '');
-  const proxied = `${base}/proxy/manifest.m3u8`
+  // EasyProxy ha un extractor nativo per Vavoo che gestisce il token di autenticazione.
+  // /extractor/video con redirect_stream=true risolve il vero HLS autenticato.
+  const extracted = `${base}/extractor/video`
+    + `?d=${encodeURIComponent(streamUrl)}`
+    + `&redirect_stream=true`
+    + `&password=${pwd}`;
+
+  // Fallback: proxy diretto con User-Agent
+  const proxiedFallback = `${base}/proxy/manifest.m3u8`
     + `?url=${encodeURIComponent(streamUrl)}`
     + `&h_User-Agent=VAVOO%2F2.6`
-    + `&password=${encodeURIComponent(proxyPassword || '')}`;
-  return { url: proxied };
+    + `&password=${pwd}`;
+
+  return { url: extracted, proxiedFallback };
 }
 
 // ─── DLStreams helpers ────────────────────────────────────────────────────────
@@ -424,8 +432,10 @@ builder.defineStreamHandler(async ({ type, id, config: configRaw }) => {
 
   if (id.startsWith('lellotv-vavoo-')) {
     const chId = id.replace('lellotv-vavoo-', '');
-    const stream = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-    return { streams: [{ ...stream, name: 'LelloTV', description: '🇮🇹 Vavoo Italia' }] };
+    const { url, proxiedFallback } = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+    const streams = [{ url, name: 'LelloTV [Extractor]', description: '🇮🇹 Vavoo Italia' }];
+    if (proxiedFallback) streams.push({ url: proxiedFallback, name: 'LelloTV [Proxy]', description: '🇮🇹 Vavoo Italia (fallback)' });
+    return { streams };
   }
 
   if (id.startsWith('lellotv-dl-')) {
@@ -587,8 +597,10 @@ app.use(async (req, res, next) => {
     } else if (resource === 'stream') {
       if (id.startsWith('lellotv-vavoo-')) {
         const chId = id.replace('lellotv-vavoo-', '');
-        const stream = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-        result = { streams: [{ ...stream, name: 'LelloTV', description: '🇮🇹 Vavoo Italia' }] };
+        const { url, proxiedFallback } = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+        const streams = [{ url, name: 'LelloTV [Extractor]', description: '🇮🇹 Vavoo Italia' }];
+        if (proxiedFallback) streams.push({ url: proxiedFallback, name: 'LelloTV [Proxy]', description: '🇮🇹 Vavoo Italia (fallback)' });
+        result = { streams };
       } else if (id.startsWith('lellotv-dl-')) {
         const chId = id.replace('lellotv-dl-', '');
         const stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
