@@ -6,15 +6,14 @@ const fetch = require(‘node-fetch’);
 
 const PORT = process.env.PORT || 7860;
 
-// ─── HTML configurazione (inline) ────────────────────────────────────────────
-
+// HTML configurazione (inline, nessun file esterno)
 const CONFIGURE_HTML = `<!DOCTYPE html>
 
 <html lang="it">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LelloTV &ndash; Configurazione</title>
+  <title>LelloTV - Configurazione</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -91,7 +90,7 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
 <body>
   <div class="card">
     <div class="header">
-      <div class="logo">📺</div>
+      <div class="logo">TV</div>
       <h1>LelloTV</h1>
       <p>Canali live da Vavoo (Italia) &amp; DLStreams tramite EasyProxy</p>
     </div>
@@ -103,15 +102,15 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
           <input type="url" id="proxyUrl" placeholder="https://..." />
         </div>
         <div class="field">
-          <label>Password EasyProxy</label>
-          <input type="password" id="proxyPassword" placeholder="ep" />
+          <label>Password EasyProxy (lascia vuoto se non configurata)</label>
+          <input type="password" id="proxyPassword" placeholder="" />
         </div>
       </div>
       <div class="section">
         <div class="section-title">Sorgenti</div>
         <div class="toggle-row">
           <div>
-            <div class="toggle-label">🇮🇹 Vavoo Italia <span class="badge">Gratuito</span></div>
+            <div class="toggle-label">Vavoo Italia <span class="badge">Gratuito</span></div>
             <div class="toggle-desc">Tutti i canali italiani da Vavoo</div>
           </div>
           <label class="toggle">
@@ -121,7 +120,7 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
         </div>
         <div class="toggle-row" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
           <div>
-            <div class="toggle-label">⚡ DLStreams (DaddyLive) <span class="badge">API Key</span></div>
+            <div class="toggle-label">DLStreams (DaddyLive) <span class="badge">API Key</span></div>
             <div class="toggle-desc">Sport live, eventi, canali internazionali</div>
           </div>
           <label class="toggle">
@@ -139,17 +138,17 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
           </div>
         </div>
       </div>
-      <button class="btn-generate" onclick="generate()">✨ Genera link di installazione</button>
+      <button class="btn-generate" onclick="generate()">Genera link di installazione</button>
       <div class="result-box" id="resultBox">
         <div class="section-title">Link di installazione</div>
         <div class="install-url" id="installUrl"></div>
         <div class="btn-row">
-          <button class="btn-copy" onclick="copyUrl()">📋 Copia URL</button>
-          <button class="btn-install" onclick="installAddon()">⚡ Installa su Stremio</button>
+          <button class="btn-copy" onclick="copyUrl()">Copia URL</button>
+          <button class="btn-install" onclick="installAddon()">Installa su Stremio</button>
         </div>
       </div>
       <p class="note">
-        Funziona anche con <strong>Nuvio</strong> &ndash; copia l'URL e aggiungilo come addon esterno.<br/>
+        Funziona anche con Nuvio - copia l'URL e aggiungilo come addon esterno.<br/>
         Nessun dato raccolto.
       </p>
     </div>
@@ -159,63 +158,54 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
       document.getElementById('dlSub').classList.toggle('dl-hidden', !this.checked);
     });
     async function generate() {
-      const proxyUrl = document.getElementById('proxyUrl').value.trim();
-      const proxyPassword = document.getElementById('proxyPassword').value.trim();
-      const dlApiKey = document.getElementById('dlApiKey').value.trim();
-      const vavooEnabled = document.getElementById('vavooEnabled').checked;
-      const dlEnabled = document.getElementById('dlEnabled').checked;
+      var proxyUrl = document.getElementById('proxyUrl').value.trim();
+      var proxyPassword = document.getElementById('proxyPassword').value.trim();
+      var dlApiKey = document.getElementById('dlApiKey').value.trim();
+      var vavooEnabled = document.getElementById('vavooEnabled').checked;
+      var dlEnabled = document.getElementById('dlEnabled').checked;
       if (!vavooEnabled && !dlEnabled) { alert('Attiva almeno una sorgente!'); return; }
-      const res = await fetch('/api/encode-config', {
+      var res = await fetch('/api/encode-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ proxyUrl, proxyPassword, dlApiKey, vavooEnabled, dlEnabled }),
+        body: JSON.stringify({ proxyUrl: proxyUrl, proxyPassword: proxyPassword, dlApiKey: dlApiKey, vavooEnabled: vavooEnabled, dlEnabled: dlEnabled }),
       });
-      const { configB64 } = await res.json();
-      const url = window.location.origin + '/' + configB64 + '/manifest.json';
+      var data = await res.json();
+      var url = window.location.origin + '/' + data.configB64 + '/manifest.json';
       document.getElementById('installUrl').textContent = url;
       document.getElementById('resultBox').classList.add('visible');
       window._installUrl = url;
     }
     function copyUrl() {
-      navigator.clipboard.writeText(window._installUrl).then(() => {
-        const btn = document.querySelector('.btn-copy');
-        btn.textContent = '✅ Copiato!';
-        setTimeout(() => { btn.textContent = '📋 Copia URL'; }, 2000);
+      navigator.clipboard.writeText(window._installUrl).then(function() {
+        var btn = document.querySelector('.btn-copy');
+        btn.textContent = 'Copiato!';
+        setTimeout(function() { btn.textContent = 'Copia URL'; }, 2000);
       });
     }
     function installAddon() {
-      window.open('stremio://' + window._installUrl.replace(/^https?:\\/\\//, ''), '_blank');
+      window.open('stremio://' + window._installUrl.replace(/^https?:\/\//, ''), '_blank');
     }
   </script>
 </body>
 </html>`;
 
-// ─── Vavoo: autenticazione + stream ──────────────────────────────────────────
-//
-// Vavoo usa questo flusso:
-//   1. POST /api/v2/auth/signin → ottieni auth_token (firma)
-//   2. URL stream: https://vavoo.to/vavoo-iptv/play/<channelId><auth_token>
-//
-// L’auth_token dura circa 1 ora, quindi lo cacchiamo.
+// Vavoo auth token cache
+var vavooToken = null;
+var vavooTokenTs = 0;
+var TOKEN_TTL = 50 * 60 * 1000;
 
-const VAVOO_HEADERS = {
-‘User-Agent’: ‘VAVOO/2.6’,
-‘Accept’: ‘application/json’,
-‘Content-Type’: ‘application/json’,
-};
-
-// Cache del token
-let vavooToken = null;
-let vavooTokenTs = 0;
-const TOKEN_TTL = 50 * 60 * 1000; // 50 minuti
+var VAVOO_UA = ‘VAVOO/2.6’;
 
 async function getVavooToken() {
 if (vavooToken && Date.now() - vavooTokenTs < TOKEN_TTL) return vavooToken;
-
 try {
-const res = await fetch(‘https://vavoo.to/api/v2/auth/signin’, {
+var res = await fetch(‘https://vavoo.to/api/v2/auth/signin’, {
 method: ‘POST’,
-headers: VAVOO_HEADERS,
+headers: {
+‘User-Agent’: VAVOO_UA,
+‘Accept’: ‘application/json’,
+‘Content-Type’: ‘application/json’,
+},
 body: JSON.stringify({
 username: ‘vavoo_user’,
 password: ‘vavoo_pass’,
@@ -224,21 +214,14 @@ bundleId: ‘at.vavoo.content’,
 }),
 timeout: 10000,
 });
-
-```
-if (!res.ok) throw new Error(`signin HTTP ${res.status}`);
-const json = await res.json();
-
-// Il token è nella risposta come auth_token o token
-const token = json.auth_token || json.token || json.data?.auth_token;
-if (!token) throw new Error('auth_token non trovato nella risposta: ' + JSON.stringify(json).slice(0, 200));
-
+if (!res.ok) throw new Error(‘signin HTTP ’ + res.status);
+var json = await res.json();
+var token = json.auth_token || json.token || (json.data && json.data.auth_token);
+if (!token) throw new Error(‘token non trovato: ’ + JSON.stringify(json).slice(0, 200));
 vavooToken = token;
 vavooTokenTs = Date.now();
-console.log('[Vavoo] Token aggiornato:', token.slice(0, 20) + '...');
+console.log(’[Vavoo] Token aggiornato’);
 return token;
-```
-
 } catch (e) {
 console.error(’[Vavoo] getVavooToken error:’, e.message);
 return null;
@@ -247,31 +230,24 @@ return null;
 
 async function fetchVavooItaly() {
 try {
-const res = await fetch(‘https://vavoo.to/channels’, {
-headers: VAVOO_HEADERS,
+var res = await fetch(‘https://vavoo.to/channels’, {
+headers: { ‘User-Agent’: VAVOO_UA, ‘Accept’: ‘*/*’ },
 timeout: 15000,
 });
-if (!res.ok) throw new Error(`HTTP ${res.status}`);
-const json = await res.json();
-if (!Array.isArray(json)) throw new Error(‘Risposta non è un array’);
-
-```
-const italy = json.filter(ch => ch.country === 'Italy');
-italy.sort((a, b) => a.p - b.p);
-
-// Deduplicazione per nome base
-const seen = new Set();
-const deduped = italy.filter(ch => {
-  const base = ch.name.replace(/\s*\(\d+\)\s*$/, '').trim().toLowerCase();
-  if (seen.has(base)) return false;
-  seen.add(base);
-  return true;
+if (!res.ok) throw new Error(‘HTTP ’ + res.status);
+var json = await res.json();
+if (!Array.isArray(json)) throw new Error(‘risposta non e un array’);
+var italy = json.filter(function(ch) { return ch.country === ‘Italy’; });
+italy.sort(function(a, b) { return a.p - b.p; });
+var seen = {};
+var deduped = italy.filter(function(ch) {
+var base = ch.name.replace(/\s*(\d+)\s*$/, ‘’).trim().toLowerCase();
+if (seen[base]) return false;
+seen[base] = true;
+return true;
 });
-
-console.log(`[Vavoo] Totale: ${json.length} | Italia: ${italy.length} | Deduplicati: ${deduped.length}`);
+console.log(’[Vavoo] Italia: ’ + italy.length + ’ | Deduplicati: ’ + deduped.length);
 return deduped;
-```
-
 } catch (e) {
 console.error(’[Vavoo] fetchVavooItaly error:’, e.message);
 return [];
@@ -279,45 +255,39 @@ return [];
 }
 
 async function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
-// Ottieni il token di autenticazione
-const token = await getVavooToken();
+var token = await getVavooToken();
+var streamUrl = token
+? ‘https://vavoo.to/vavoo-iptv/play/’ + channelId + token
+: ‘https://vavoo.to/play/’ + channelId + ‘/index.m3u8’;
 
-// URL stream nel formato corretto: /vavoo-iptv/play/<id><token>
-// Se non abbiamo il token, proviamo con l’URL diretto come fallback
-const streamUrl = token
-? `https://vavoo.to/vavoo-iptv/play/${channelId}${token}`
-: `https://vavoo.to/play/${channelId}/index.m3u8`;
-
-const base = (proxyUrl || ‘’).replace(//$/, ‘’);
-const pwd = encodeURIComponent(proxyPassword || ‘’);
+var base = (proxyUrl || ‘’).replace(//$/, ‘’);
+var pwd = encodeURIComponent(proxyPassword || ‘’);
 
 if (!base) {
 return {
 url: streamUrl,
-behaviorHints: { notWebReady: false, headers: { ‘User-Agent’: ‘VAVOO/2.6’ } },
+behaviorHints: { notWebReady: false, headers: { ‘User-Agent’: VAVOO_UA } },
 };
 }
 
-// Attraverso EasyProxy: proxy HLS con User-Agent VAVOO
-const proxied = `${base}/proxy/manifest.m3u8`
-+ `?url=${encodeURIComponent(streamUrl)}`
-+ `&h_User-Agent=VAVOO%2F2.6`
-+ `&api_password=${pwd}`;
+var proxied = base + ‘/proxy/manifest.m3u8’
++ ‘?url=’ + encodeURIComponent(streamUrl)
++ ‘&h_User-Agent=VAVOO%2F2.6’
++ ‘&api_password=’ + pwd;
 
 return { url: proxied };
 }
 
-// ─── DLStreams helpers ────────────────────────────────────────────────────────
-
+// DLStreams
 async function fetchDLChannels(apiKey) {
 if (!apiKey) return [];
 try {
-const res = await fetch(
-`https://dlstreams.com/daddyapi.php?key=${encodeURIComponent(apiKey)}&endpoint=channels`,
+var res = await fetch(
+‘https://dlstreams.com/daddyapi.php?key=’ + encodeURIComponent(apiKey) + ‘&endpoint=channels’,
 { timeout: 12000 }
 );
-if (!res.ok) throw new Error(`HTTP ${res.status}`);
-const json = await res.json();
+if (!res.ok) throw new Error(‘HTTP ’ + res.status);
+var json = await res.json();
 if (json.success && Array.isArray(json.data)) return json.data;
 if (Array.isArray(json)) return json;
 return [];
@@ -329,108 +299,87 @@ return [];
 
 async function resolveDLStream(channelId, proxyUrl, proxyPassword) {
 if (!proxyUrl) return null;
-const pageUrl = `https://dlstreams.com/stream/stream-${channelId}.php`;
-const proxied = `${proxyUrl.replace(/\/$/, '')}/extractor/video`
-+ `?d=${encodeURIComponent(pageUrl)}`
-+ `&redirect_stream=true`
-+ `&password=${encodeURIComponent(proxyPassword || '')}`;
+var pageUrl = ‘https://dlstreams.com/stream/stream-’ + channelId + ‘.php’;
+var proxied = proxyUrl.replace(//$/, ‘’) + ‘/extractor/video’
++ ‘?d=’ + encodeURIComponent(pageUrl)
++ ‘&redirect_stream=true’
++ ‘&api_password=’ + encodeURIComponent(proxyPassword || ‘’);
 return { url: proxied };
 }
 
-// ─── Cache in-memory ──────────────────────────────────────────────────────────
-
-const cache = {
-vavoo: { data: [], ts: 0 },
-dl: {},
-};
-const CACHE_TTL = 15 * 60 * 1000; // 15 minuti
+// Cache
+var cache = { vavoo: { data: [], ts: 0 }, dl: {} };
+var CACHE_TTL = 15 * 60 * 1000;
 
 async function getCachedVavoo() {
-if (Date.now() - cache.vavoo.ts < CACHE_TTL && cache.vavoo.data.length > 0) {
-return cache.vavoo.data;
-}
-const ch = await fetchVavooItaly();
+if (Date.now() - cache.vavoo.ts < CACHE_TTL && cache.vavoo.data.length > 0) return cache.vavoo.data;
+var ch = await fetchVavooItaly();
 cache.vavoo = { data: ch, ts: Date.now() };
 return ch;
 }
 
 async function getCachedDL(apiKey) {
 if (!apiKey) return [];
-const c = cache.dl[apiKey];
+var c = cache.dl[apiKey];
 if (c && Date.now() - c.ts < CACHE_TTL) return c.data;
-const ch = await fetchDLChannels(apiKey);
+var ch = await fetchDLChannels(apiKey);
 cache.dl[apiKey] = { data: ch, ts: Date.now() };
 return ch;
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-
+// Config
 function parseConfig(raw) {
 if (!raw || raw === ‘default’) {
 return { proxyUrl: ‘’, proxyPassword: ‘’, dlApiKey: ‘’, vavooEnabled: true, dlEnabled: false };
 }
 try { return JSON.parse(Buffer.from(raw, ‘base64’).toString(‘utf8’)); }
-catch { return { proxyUrl: ‘’, proxyPassword: ‘’, dlApiKey: ‘’, vavooEnabled: true, dlEnabled: false }; }
+catch (e) { return { proxyUrl: ‘’, proxyPassword: ‘’, dlApiKey: ‘’, vavooEnabled: true, dlEnabled: false }; }
 }
 
-// ─── Stremio Addon ────────────────────────────────────────────────────────────
-
-const manifest = {
+// Stremio manifest
+var manifest = {
 id: ‘community.lellotv’,
-version: ‘1.3.0’,
+version: ‘1.4.0’,
 name: ‘LelloTV’,
 description: ‘Canali italiani Vavoo + DLStreams tramite EasyProxy.’,
 resources: [‘catalog’, ‘meta’, ‘stream’],
 types: [‘tv’],
 catalogs: [
-{ type: ‘tv’, id: ‘lellotv-vavoo’, name: ‘🇮🇹 LelloTV – Vavoo Italia’,
+{ type: ‘tv’, id: ‘lellotv-vavoo’, name: ‘LelloTV Vavoo Italia’,
 extra: [{ name: ‘search’, isRequired: false }, { name: ‘skip’, isRequired: false }] },
-{ type: ‘tv’, id: ‘lellotv-dl’, name: ‘⚡ LelloTV – DLStreams’,
+{ type: ‘tv’, id: ‘lellotv-dl’, name: ‘LelloTV DLStreams’,
 extra: [{ name: ‘search’, isRequired: false }, { name: ‘skip’, isRequired: false }] },
 ],
 idPrefixes: [‘lellotv-vavoo-’, ‘lellotv-dl-’],
 behaviorHints: { configurable: true, configurationRequired: false },
 };
 
-const builder = new addonBuilder(manifest);
-const PAGE = 100;
+var builder = new addonBuilder(manifest);
+var PAGE = 100;
 
-builder.defineCatalogHandler(async ({ type, id, extra, config: configRaw }) => {
-const config = parseConfig(configRaw);
-const search = ((extra && extra.search) || ‘’).toLowerCase();
-const skip   = parseInt((extra && extra.skip) || ‘0’, 10);
+builder.defineCatalogHandler(async function(args) {
+var type = args.type, id = args.id, extra = args.extra, configRaw = args.config;
+var config = parseConfig(configRaw);
+var search = ((extra && extra.search) || ‘’).toLowerCase();
+var skip = parseInt((extra && extra.skip) || ‘0’, 10);
 
 if (id === ‘lellotv-vavoo’) {
-const channels = await getCachedVavoo();
-const list = search
-? channels.filter(c => (c.name || ‘’).toLowerCase().includes(search))
-: channels;
+var channels = await getCachedVavoo();
+var list = search ? channels.filter(function(c) { return (c.name || ‘’).toLowerCase().indexOf(search) !== -1; }) : channels;
 return {
-metas: list.slice(skip, skip + PAGE).map(ch => ({
-id:          `lellotv-vavoo-${ch.id}`,
-type:        ‘tv’,
-name:        ch.name,
-genres:      [‘Italia’],
-description: `🇮🇹 Vavoo Italia`,
-})),
+metas: list.slice(skip, skip + PAGE).map(function(ch) {
+return { id: ‘lellotv-vavoo-’ + ch.id, type: ‘tv’, name: ch.name, genres: [‘Italia’], description: ‘Vavoo Italia’ };
+}),
 };
 }
 
 if (id === ‘lellotv-dl’) {
-const channels = await getCachedDL(config.dlApiKey);
-const list = search
-? channels.filter(c => (c.channel_name || ‘’).toLowerCase().includes(search))
-: channels;
+var channels = await getCachedDL(config.dlApiKey);
+var list = search ? channels.filter(function(c) { return (c.channel_name || ‘’).toLowerCase().indexOf(search) !== -1; }) : channels;
 return {
-metas: list.slice(skip, skip + PAGE).map(ch => {
-const logo = ch.logo_url
-? (ch.logo_url.startsWith(‘http’) ? ch.logo_url : `https://dlstreams.com/${ch.logo_url}`)
-: undefined;
-return {
-id: `lellotv-dl-${ch.channel_id}`, type: ‘tv’,
-name: ch.channel_name, poster: logo, logo,
-description: ‘DLStreams – Live TV’,
-};
+metas: list.slice(skip, skip + PAGE).map(function(ch) {
+var logo = ch.logo_url ? (ch.logo_url.startsWith(‘http’) ? ch.logo_url : ‘https://dlstreams.com/’ + ch.logo_url) : undefined;
+return { id: ‘lellotv-dl-’ + ch.channel_id, type: ‘tv’, name: ch.channel_name, poster: logo, logo: logo, description: ‘DLStreams’ };
 }),
 };
 }
@@ -438,203 +387,172 @@ description: ‘DLStreams – Live TV’,
 return { metas: [] };
 });
 
-builder.defineMetaHandler(async ({ type, id, config: configRaw }) => {
+builder.defineMetaHandler(async function(args) {
+var id = args.id, configRaw = args.config;
 if (id.startsWith(‘lellotv-vavoo-’)) {
-const chId = id.replace(‘lellotv-vavoo-’, ‘’);
-const channels = await getCachedVavoo();
-const ch = channels.find(c => String(c.id) === chId);
+var chId = id.replace(‘lellotv-vavoo-’, ‘’);
+var channels = await getCachedVavoo();
+var ch = channels.find(function(c) { return String(c.id) === chId; });
 if (!ch) return { meta: null };
-return { meta: { id, type: ‘tv’, name: ch.name, genres: [‘Italia’], description: ‘🇮🇹 Vavoo Italia’ } };
+return { meta: { id: id, type: ‘tv’, name: ch.name, genres: [‘Italia’], description: ‘Vavoo Italia’ } };
 }
 if (id.startsWith(‘lellotv-dl-’)) {
-const chId = id.replace(‘lellotv-dl-’, ‘’);
-const config = parseConfig(configRaw);
-const channels = await getCachedDL(config.dlApiKey);
-const ch = channels.find(c => String(c.channel_id) === chId);
+var chId = id.replace(‘lellotv-dl-’, ‘’);
+var config = parseConfig(configRaw);
+var channels = await getCachedDL(config.dlApiKey);
+var ch = channels.find(function(c) { return String(c.channel_id) === chId; });
 if (!ch) return { meta: null };
-const logo = ch.logo_url
-? (ch.logo_url.startsWith(‘http’) ? ch.logo_url : `https://dlstreams.com/${ch.logo_url}`)
-: undefined;
-return { meta: { id, type: ‘tv’, name: ch.channel_name, poster: logo, logo, description: ‘DLStreams’ } };
+var logo = ch.logo_url ? (ch.logo_url.startsWith(‘http’) ? ch.logo_url : ‘https://dlstreams.com/’ + ch.logo_url) : undefined;
+return { meta: { id: id, type: ‘tv’, name: ch.channel_name, poster: logo, logo: logo, description: ‘DLStreams’ } };
 }
 return { meta: null };
 });
 
-builder.defineStreamHandler(async ({ type, id, config: configRaw }) => {
-const config = parseConfig(configRaw);
-
+builder.defineStreamHandler(async function(args) {
+var id = args.id, configRaw = args.config;
+var config = parseConfig(configRaw);
 if (id.startsWith(‘lellotv-vavoo-’)) {
-const chId = id.replace(‘lellotv-vavoo-’, ‘’);
-const stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-return { streams: [{ …stream, name: ‘LelloTV’, description: ‘🇮🇹 Vavoo Italia’ }] };
+var chId = id.replace(‘lellotv-vavoo-’, ‘’);
+var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+return { streams: [Object.assign({}, stream, { name: ‘LelloTV’, description: ‘Vavoo Italia’ })] };
 }
-
 if (id.startsWith(‘lellotv-dl-’)) {
-const chId = id.replace(‘lellotv-dl-’, ‘’);
-const stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
-return { streams: stream ? [{ …stream, name: ‘LelloTV’, description: ‘⚡ DLStreams’ }] : [] };
+var chId = id.replace(‘lellotv-dl-’, ‘’);
+var stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
+return { streams: stream ? [Object.assign({}, stream, { name: ‘LelloTV’, description: ‘DLStreams’ })] : [] };
 }
-
 return { streams: [] };
 });
 
-const addonInterface = builder.getInterface();
+var addonInterface = builder.getInterface();
 
-// ─── Express ──────────────────────────────────────────────────────────────────
-
-const app = express();
+// Express
+var app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use((req, res, next) => {
+app.use(function(req, res, next) {
 res.setHeader(‘Access-Control-Allow-Origin’, ‘*’);
 res.setHeader(‘Access-Control-Allow-Headers’, ’*’);
 next();
 });
 
-// ── Pagina configurazione ──
-app.get(’/’, (req, res) => {
+app.get(’/’, function(req, res) {
 res.setHeader(‘Content-Type’, ‘text/html; charset=utf-8’);
 res.send(CONFIGURE_HTML);
 });
 
-// ── API encode config ──
-app.post(’/api/encode-config’, (req, res) => {
-const { proxyUrl, proxyPassword, dlApiKey, vavooEnabled, dlEnabled } = req.body;
-const config = { proxyUrl, proxyPassword, dlApiKey, vavooEnabled: !!vavooEnabled, dlEnabled: !!dlEnabled };
+app.post(’/api/encode-config’, function(req, res) {
+var body = req.body;
+var config = {
+proxyUrl: body.proxyUrl || ‘’,
+proxyPassword: body.proxyPassword || ‘’,
+dlApiKey: body.dlApiKey || ‘’,
+vavooEnabled: !!body.vavooEnabled,
+dlEnabled: !!body.dlEnabled,
+};
 res.json({ configB64: Buffer.from(JSON.stringify(config)).toString(‘base64’) });
 });
 
-// ── Debug ──
-app.get(’/debug/vavoo’, async (req, res) => {
+app.get(’/debug/vavoo’, async function(req, res) {
 try {
-const ch = await getCachedVavoo();
-res.json({ count: ch.length, sample: ch.slice(0, 20), cached_at: new Date(cache.vavoo.ts).toISOString() });
+var ch = await getCachedVavoo();
+var token = await getVavooToken();
+res.json({ count: ch.length, token_ok: !!token, sample: ch.slice(0, 5), cached_at: new Date(cache.vavoo.ts).toISOString() });
 } catch (e) {
 res.status(500).json({ error: e.message });
 }
 });
 
-// ── Estrai config dal path ──
-// Pattern URL Stremio:
-//   senza config: /catalog/tv/lellotv-vavoo.json
-//   con config:   /eyJwcm94…==/catalog/tv/lellotv-vavoo.json
-// IMPORTANTE: il check “senza config” va prima, usando le keyword fisse
-const RESOURCES = ‘(catalog|meta|stream)’;
+var RESOURCES = ‘(catalog|meta|stream)’;
 
 function extractFromPath(reqPath) {
-// 1. Senza config: inizia con /catalog|meta|stream
-let m = reqPath.match(new RegExp(`^\\/${RESOURCES}\\/([^/]+)\\/([^/]+)\\.json$`));
+var m;
+m = reqPath.match(new RegExp(’^\/’ + RESOURCES + ‘\/([^/]+)\/([^/]+)\.json$’));
 if (m) return { config: ‘default’, resource: m[1], type: m[2], id: m[3] };
 
-// 2. Senza config con skip: /catalog/tv/id/skip=100.json
-m = reqPath.match(new RegExp(`^\\/catalog\\/([^/]+)\\/([^/]+)\\/skip=(\\d+)\\.json$`));
+m = reqPath.match(/^/catalog/([^/]+)/([^/]+)/skip=(\d+).json$/);
 if (m) return { config: ‘default’, resource: ‘catalog’, type: m[1], id: m[2], skip: m[3] };
 
-// 3. Con config: /BASE64/catalog|meta|stream/type/id.json
-m = reqPath.match(new RegExp(`^\\/([^/]+)\\/${RESOURCES}\\/([^/]+)\\/([^/]+)\\.json$`));
+m = reqPath.match(new RegExp(’^/([^/]+)\/’ + RESOURCES + ‘\/([^/]+)\/([^/]+)\.json$’));
 if (m) return { config: m[1], resource: m[2], type: m[3], id: m[4] };
 
-// 4. Con config e skip: /BASE64/catalog/type/id/skip=100.json
-m = reqPath.match(new RegExp(`^\\/([^/]+)\\/catalog\\/([^/]+)\\/([^/]+)\\/skip=(\\d+)\\.json$`));
+m = reqPath.match(/^/([^/]+)/catalog/([^/]+)/([^/]+)/skip=(\d+).json$/);
 if (m) return { config: m[1], resource: ‘catalog’, type: m[2], id: m[3], skip: m[4] };
 
 return null;
 }
 
-// ── Router universale ──
-app.use(async (req, res, next) => {
-if (req.method !== ‘GET’) return next();
+app.get(’/manifest.json’, function(req, res) { res.json(addonInterface.manifest); });
+app.get(’/:config/manifest.json’, function(req, res) { res.json(addonInterface.manifest); });
 
-// Manifest
-if (req.path === ‘/manifest.json’ || req.path.endsWith(’/manifest.json’)) {
-return res.json(addonInterface.manifest);
-}
+app.use(async function(req, res, next) {
+var parsed = extractFromPath(req.path);
+if (!parsed) return next();
 
-const parts = extractFromPath(req.path);
-if (!parts) return next();
-
-const { config: configRaw, resource, type, id } = parts;
-const skip   = parts.skip || req.query.skip || ‘0’;
-const search = req.query.search || ‘’;
-
-console.log(`[${resource}] config=${configRaw.slice(0,8)}… id=${id} skip=${skip} search=${search}`);
+var config = parseConfig(parsed.config);
+var resource = parsed.resource;
+var type = parsed.type;
+var id = decodeURIComponent(parsed.id);
+var extra = {};
+if (parsed.skip) extra.skip = parsed.skip;
+if (req.query.search) extra.search = req.query.search;
+if (req.query.skip) extra.skip = req.query.skip;
 
 try {
-const config = parseConfig(configRaw);
-let result;
+var result;
 
 ```
-// ── CATALOG ──
 if (resource === 'catalog') {
-  const searchLow = search.toLowerCase();
-  const skipN = parseInt(skip, 10) || 0;
-
   if (id === 'lellotv-vavoo') {
-    const channels = await getCachedVavoo();
-    const list = searchLow
-      ? channels.filter(c => c.name.toLowerCase().includes(searchLow))
-      : channels;
+    var channels = await getCachedVavoo();
+    var search = (extra.search || '').toLowerCase();
+    var skip = parseInt(extra.skip || '0', 10);
+    var list = search ? channels.filter(function(c) { return (c.name || '').toLowerCase().indexOf(search) !== -1; }) : channels;
     result = {
-      metas: list.slice(skipN, skipN + PAGE).map(ch => ({
-        id:     `lellotv-vavoo-${ch.id}`,
-        type:   'tv',
-        name:   ch.name,
-        genres: ['Italia'],
-        description: '🇮🇹 Vavoo Italia',
-      })),
+      metas: list.slice(skip, skip + PAGE).map(function(ch) {
+        return { id: 'lellotv-vavoo-' + ch.id, type: 'tv', name: ch.name, genres: ['Italia'], description: 'Vavoo Italia' };
+      }),
     };
   } else if (id === 'lellotv-dl') {
-    const channels = await getCachedDL(config.dlApiKey);
-    const list = searchLow
-      ? channels.filter(c => (c.channel_name || '').toLowerCase().includes(searchLow))
-      : channels;
+    var channels = await getCachedDL(config.dlApiKey);
+    var search = (extra.search || '').toLowerCase();
+    var skip = parseInt(extra.skip || '0', 10);
+    var list = search ? channels.filter(function(c) { return (c.channel_name || '').toLowerCase().indexOf(search) !== -1; }) : channels;
     result = {
-      metas: list.slice(skipN, skipN + PAGE).map(ch => {
-        const logo = ch.logo_url
-          ? (ch.logo_url.startsWith('http') ? ch.logo_url : `https://dlstreams.com/${ch.logo_url}`)
-          : undefined;
-        return { id: `lellotv-dl-${ch.channel_id}`, type: 'tv', name: ch.channel_name, poster: logo, logo };
+      metas: list.slice(skip, skip + PAGE).map(function(ch) {
+        var logo = ch.logo_url ? (ch.logo_url.startsWith('http') ? ch.logo_url : 'https://dlstreams.com/' + ch.logo_url) : undefined;
+        return { id: 'lellotv-dl-' + ch.channel_id, type: 'tv', name: ch.channel_name, poster: logo, logo: logo, description: 'DLStreams' };
       }),
     };
   } else {
     result = { metas: [] };
   }
 
-// ── META ──
 } else if (resource === 'meta') {
   if (id.startsWith('lellotv-vavoo-')) {
-    const chId = id.replace('lellotv-vavoo-', '');
-    const channels = await getCachedVavoo();
-    const ch = channels.find(c => String(c.id) === chId);
-    result = ch
-      ? { meta: { id, type: 'tv', name: ch.name, genres: ['Italia'] } }
-      : { meta: null };
+    var chId = id.replace('lellotv-vavoo-', '');
+    var channels = await getCachedVavoo();
+    var ch = channels.find(function(c) { return String(c.id) === chId; });
+    result = { meta: ch ? { id: id, type: 'tv', name: ch.name, genres: ['Italia'], description: 'Vavoo Italia' } : null };
   } else if (id.startsWith('lellotv-dl-')) {
-    const chId = id.replace('lellotv-dl-', '');
-    const channels = await getCachedDL(config.dlApiKey);
-    const ch = channels.find(c => String(c.channel_id) === chId);
-    if (ch) {
-      const logo = ch.logo_url
-        ? (ch.logo_url.startsWith('http') ? ch.logo_url : `https://dlstreams.com/${ch.logo_url}`)
-        : undefined;
-      result = { meta: { id, type: 'tv', name: ch.channel_name, poster: logo, logo } };
-    } else {
-      result = { meta: null };
-    }
+    var chId = id.replace('lellotv-dl-', '');
+    var channels = await getCachedDL(config.dlApiKey);
+    var ch = channels.find(function(c) { return String(c.channel_id) === chId; });
+    var logo = ch && ch.logo_url ? (ch.logo_url.startsWith('http') ? ch.logo_url : 'https://dlstreams.com/' + ch.logo_url) : undefined;
+    result = { meta: ch ? { id: id, type: 'tv', name: ch.channel_name, poster: logo, logo: logo, description: 'DLStreams' } : null };
   } else {
     result = { meta: null };
   }
 
-// ── STREAM ──
 } else if (resource === 'stream') {
   if (id.startsWith('lellotv-vavoo-')) {
-    const chId = id.replace('lellotv-vavoo-', '');
-    const stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-    result = { streams: [{ ...stream, name: 'LelloTV', description: '🇮🇹 Vavoo Italia' }] };
+    var chId = id.replace('lellotv-vavoo-', '');
+    var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+    result = { streams: [Object.assign({}, stream, { name: 'LelloTV', description: 'Vavoo Italia' })] };
   } else if (id.startsWith('lellotv-dl-')) {
-    const chId = id.replace('lellotv-dl-', '');
-    const stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
-    result = { streams: stream ? [{ ...stream, name: 'LelloTV', description: '⚡ DLStreams' }] : [] };
+    var chId = id.replace('lellotv-dl-', '');
+    var stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
+    result = { streams: stream ? [Object.assign({}, stream, { name: 'LelloTV', description: 'DLStreams' })] : [] };
   } else {
     result = { streams: [] };
   }
@@ -646,15 +564,15 @@ res.json(result);
 ```
 
 } catch (e) {
-console.error(`[ERROR] ${resource} ${id}:`, e.message, e.stack);
-res.status(500).json({ error: e.message, stack: e.stack });
+console.error(’[’ + resource + ’] ’ + id + ‘:’, e.message);
+res.status(500).json({ error: e.message });
 }
 });
 
-app.use((req, res) => res.status(404).json({ error: ‘Not found’, path: req.path }));
+app.use(function(req, res) {
+res.status(404).json({ error: ‘Not found’, path: req.path });
+});
 
-app.listen(PORT, ‘0.0.0.0’, () => {
-console.log(`\n🎬 LelloTV v1.3 → http://0.0.0.0:${PORT}`);
-console.log(`📡 Manifest:  /manifest.json`);
-console.log(`🔍 Debug:     /debug/vavoo`);
+app.listen(PORT, ‘0.0.0.0’, function() {
+console.log(‘LelloTV v1.4 -> http://0.0.0.0:’ + PORT);
 });
