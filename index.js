@@ -243,9 +243,14 @@ async function getAddonSig(clientIP) {
     timeout: 12000,
   });
 
-  if (!res.ok) throw new Error('lokke ping HTTP ' + res.status);
-  var json = await res.json();
-  if (!json.addonSig) throw new Error('addonSig mancante dalla risposta lokke');
+  var lokkeText = await res.text();
+  if (!res.ok) {
+    console.error('[Vavoo] lokke ping error:', lokkeText.slice(0, 300));
+    throw new Error('lokke ping HTTP ' + res.status);
+  }
+  var json = JSON.parse(lokkeText);
+  console.log('[Vavoo] lokke ping OK, addonSig length:', json.addonSig ? json.addonSig.length : 'MISSING');
+  if (!json.addonSig) throw new Error('addonSig mancante dalla risposta lokke: ' + lokkeText.slice(0, 200));
 
   // Riscrive gli IP nell'addonSig con l'IP del viewer (tecnica del Cloudflare Worker)
   var addonSig = json.addonSig;
@@ -286,8 +291,12 @@ async function resolveVavooStreamUrl(channelId, clientIP) {
     timeout: 12000,
   });
 
-  if (!res.ok) throw new Error('mediahubmx-resolve HTTP ' + res.status);
-  var result = await res.json();
+  var responseText = await res.text();
+  if (!res.ok) {
+    console.error('[Vavoo] mediahubmx-resolve error body:', responseText.slice(0, 500));
+    throw new Error('mediahubmx-resolve HTTP ' + res.status);
+  }
+  var result = JSON.parse(responseText);
 
   var streamUrl;
   if (Array.isArray(result)) {
