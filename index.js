@@ -272,7 +272,8 @@ async function getAddonSig(clientIP) {
 
 // Risolve lo stream Vavoo tramite mediahubmx-resolve.json
 async function resolveVavooStreamUrl(channelId, clientIP) {
-  var vavooUrl = 'https://vavoo.to/play/' + channelId + '/index.m3u8';
+  // MediaHubMX resolver riconosce il formato /channel/<id>
+  var vavooUrl = 'https://vavoo.to/channel/' + channelId;
   var addonSig = await getAddonSig(clientIP);
   console.log('[Vavoo] resolving', channelId, 'for IP', clientIP);
 
