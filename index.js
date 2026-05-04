@@ -256,33 +256,12 @@ async function fetchVavooItaly() {
 }
 
 async function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
-  // 1. Ottieni il guest token da vavoo.tv/api/box/guest
-  // 2. Costruisci URL: https://vavoo.to/vavoo-iptv/play/<id><token>
-  //    (questo è il formato corretto usato da TvVoo e altri addon funzionanti)
-  // 3. Passa a EasyProxy come proxy/manifest.m3u8?d=<url>
-  var token = await getVavooGuestToken();
-  var base = (proxyUrl || '').replace(/\/$/, '');
-  var pwd = encodeURIComponent(proxyPassword || '');
-
-  // URL stream nel formato corretto con token autenticato
-  var streamUrl = token
-    ? 'https://vavoo.to/vavoo-iptv/play/' + channelId + token
-    : 'https://vavoo.to/play/' + channelId + '/index.m3u8';
-
-  if (!base) {
-    return {
-      url: streamUrl,
-      behaviorHints: { notWebReady: false, headers: { 'User-Agent': VAVOO_UA } },
-    };
-  }
-
-  // EasyProxy proxia il manifest con User-Agent VAVOO/2.6
-  var url = base + '/proxy/manifest.m3u8'
-    + '?d=' + encodeURIComponent(streamUrl)
-    + '&h_User-Agent=VAVOO%2F2.6'
-    + '&api_password=' + pwd;
-
-  return { url: url };
+  // Il token Vavoo e IP-locked all'IP che lo genera (LelloTV su Render).
+  // Quindi NON usiamo EasyProxy per Vavoo (avrebbe IP diverso).
+  // LelloTV stesso fa da proxy HLS: genera il token e proxia i segmenti
+  // dal suo IP, che coincide con l'IP nel token.
+  // Stremio riceve: https://lellotv-xxx.onrender.com/vavoo-hls/<channelId>
+  return { url: '__SELF_BASE__/vavoo-hls/' + channelId };
 }
 
 // DLStreams
@@ -419,9 +398,10 @@ builder.defineStreamHandler(async function(args) {
   var id = args.id, configRaw = args.config;
   var config = parseConfig(configRaw);
   if (id.startsWith('lellotv-vavoo-')) {
-    var chId = id.replace('lellotv-vavoo-', '');
-    var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-    return { streams: [Object.assign({}, stream, { name: 'LelloTV', description: 'Vavoo Italia' })] };
+    // Questo handler SDK non ha accesso a req per getSelfBase.
+    // Il routing principale avviene nel router Express che gestisce il placeholder.
+    // Restituiamo streams vuoto qui — Stremio riprova via il router diretto.
+    return { streams: [] };
   }
   if (id.startsWith('lellotv-dl-')) {
     var chId = id.replace('lellotv-dl-', '');
@@ -441,6 +421,75 @@ app.use(function(req, res, next) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   next();
+});
+
+// Rileva il proprio URL pubblico
+function getSelfBase(req) {
+  var proto = (req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
+  var host  = req.headers['x-forwarded-host'] || req.headers['host'] || 'localhost';
+  return proto + '://' + host;
+}
+
+// ── Proxy HLS interno per Vavoo ──────────────────────────────────────────────
+// Il token Vavoo e IP-locked all'IP del server che lo genera.
+// Facendo il proxy qui su LelloTV, token-IP == request-IP == funziona.
+
+app.get('/vavoo-hls/:channelId', async function(req, res) {
+  try {
+    var token = await getVavooGuestToken();
+    if (!token) return res.status(503).json({ error: 'Token Vavoo non disponibile' });
+
+    var channelId = req.params.channelId;
+    var streamUrl = 'https://vavoo.to/vavoo-iptv/play/' + channelId + token;
+    console.log('[Vavoo HLS] fetching manifest for', channelId);
+
+    var upstream = await fetch(streamUrl, {
+      headers: { 'User-Agent': VAVOO_UA },
+      redirect: 'follow',
+      timeout: 12000,
+    });
+
+    if (!upstream.ok) {
+      console.error('[Vavoo HLS] upstream', upstream.status, channelId);
+      return res.status(upstream.status).json({ error: 'Vavoo error ' + upstream.status });
+    }
+
+    var m3u8 = await upstream.text();
+    var finalUrl = upstream.url;
+    var base = finalUrl.substring(0, finalUrl.lastIndexOf('/') + 1);
+    var selfBase = getSelfBase(req);
+
+    // Riscrive URL segmenti e nested playlist per passare per /vavoo-seg
+    m3u8 = m3u8.replace(/^(?!#)(\S+)$/gm, function(line) {
+      var absUrl = line.startsWith('http') ? line : base + line;
+      return selfBase + '/vavoo-seg?u=' + encodeURIComponent(absUrl);
+    });
+
+    res.setHeader('Content-Type', 'application/x-mpegURL');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(m3u8);
+  } catch (e) {
+    console.error('[Vavoo HLS] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Proxy per segmenti TS e chiavi AES
+app.get('/vavoo-seg', async function(req, res) {
+  var targetUrl = req.query.u;
+  if (!targetUrl) return res.status(400).send('Missing u');
+  try {
+    var upstream = await fetch(targetUrl, {
+      headers: { 'User-Agent': VAVOO_UA },
+      redirect: 'follow',
+      timeout: 20000,
+    });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'video/MP2T');
+    upstream.body.pipe(res);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
 });
 
 app.get('/', function(req, res) {
@@ -554,7 +603,11 @@ app.use(async function(req, res, next) {
       if (id.startsWith('lellotv-vavoo-')) {
         var chId = id.replace('lellotv-vavoo-', '');
         var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-        result = { streams: [Object.assign({}, stream, { name: 'LelloTV', description: 'Vavoo Italia' })] };
+        // Sostituisce il placeholder con il vero URL pubblico del server
+        if (stream.url && stream.url.includes('__SELF_BASE__')) {
+          stream = Object.assign({}, stream, { url: stream.url.replace('__SELF_BASE__', getSelfBase(req)) });
+        }
+        result = { streams: [Object.assign({}, stream, { name: 'LelloTV', description: '\ud83c\uddee\ud83c\uddf9 Vavoo Italia' })] };
       } else if (id.startsWith('lellotv-dl-')) {
         var chId = id.replace('lellotv-dl-', '');
         var stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
