@@ -3,6 +3,10 @@
 const { addonBuilder } = require('stremio-addon-sdk');
 const express = require('express');
 const fetch = require('node-fetch');
+const https = require('https');
+
+// Agent che ignora SSL scaduto/invalido (necessario per il CDN di Vavoo)
+var VAVOO_AGENT = new https.Agent({ rejectUnauthorized: false });
 
 const PORT = process.env.PORT || 7860;
 
@@ -190,43 +194,112 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
 
 var VAVOO_UA = 'VAVOO/2.6';
 
-// Cache del guest token
-var vavooGuestToken = null;
-var vavooGuestTokenTs = 0;
-var GUEST_TOKEN_TTL = 30 * 60 * 1000; // 30 minuti (token dura ~60 min)
+// Token hardcoded dall'app Lokke (client Vavoo-compatibile)
+var LOKKE_TOKEN = 'ldCvE092e7gER0rVIajfsXIvRhwlrAzP6_1oEJ4q6HH89QHt24v6NNL_jQJO219hiLOXF2hqEfsUuEWitEIGN4EaHHEHb7Cd7gojc5SQYRFzU3XWo_kMeryAUbcwWnQrnf0-';
 
-async function getVavooGuestToken() {
-  if (vavooGuestToken && Date.now() - vavooGuestTokenTs < GUEST_TOKEN_TTL) {
-    return vavooGuestToken;
-  }
+// Estrae l'IP reale del viewer dalla request Stremio
+function getViewerIP(req) {
+  var fwd = req.headers['x-forwarded-for'];
+  if (fwd) return fwd.split(',')[0].trim();
+  return req.headers['x-real-ip'] || '1.1.1.1';
+}
+
+// Ottieni addonSig da lokke.app con l'IP del viewer incorporato
+async function getAddonSig(clientIP) {
+  var now = Date.now();
+  var uniqueId = Math.random().toString(16).slice(2, 18);
+  var payload = {
+    token: LOKKE_TOKEN,
+    reason: 'app-blur', locale: 'de', theme: 'dark',
+    metadata: {
+      device: { type: 'Handset', brand: 'google', model: 'Nexus', name: '21081111RG', uniqueId: uniqueId },
+      os: { name: 'android', version: '7.1.2', abis: ['arm64-v8a'], host: 'android' },
+      app: { platform: 'android', version: '1.1.0', buildId: '97215000', engine: 'hbc85',
+             signatures: ['6e8a975e3cbf07d5de823a760d4c2547f86c1403105020adee5de67ac510999e'],
+             installer: 'com.android.vending' },
+      version: { package: 'app.lokke.main', binary: '1.1.0', js: '1.1.0' }
+    },
+    appFocusTime: 0, playerActive: false, playDuration: 0,
+    devMode: true, hasAddon: true, castConnected: false,
+    package: 'app.lokke.main', version: '1.1.0', process: 'app',
+    firstAppStart: now - 86400000, lastAppStart: now,
+    ipLocation: clientIP, adblockEnabled: false,
+    proxy: { supported: ['ss', 'openvpn'], engine: 'openvpn', ssVersion: 1,
+             enabled: false, autoServer: true, id: 'fi-hel' },
+    iap: { supported: true }
+  };
+
+  var res = await fetch('https://www.lokke.app/api/app/ping', {
+    method: 'POST',
+    headers: {
+      'user-agent': 'okhttp/4.11.0',
+      'accept': 'application/json',
+      'content-type': 'application/json; charset=utf-8',
+      'accept-encoding': 'gzip',
+      'X-Forwarded-For': clientIP,
+      'X-Real-IP': clientIP,
+    },
+    body: JSON.stringify(payload),
+    timeout: 12000,
+  });
+
+  if (!res.ok) throw new Error('lokke ping HTTP ' + res.status);
+  var json = await res.json();
+  if (!json.addonSig) throw new Error('addonSig mancante dalla risposta lokke');
+
+  // Riscrive gli IP nell'addonSig con l'IP del viewer (tecnica del Cloudflare Worker)
+  var addonSig = json.addonSig;
   try {
-    var res = await fetch('https://www.vavoo.tv/api/box/guest', {
-      method: 'POST',
-      headers: {
-        'User-Agent': VAVOO_UA,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        platform: 'Windows NT x86 32-bit',
-        version: '2.6',
-        service_version: '1.2.24',
-        branch: 'master',
-      }),
-      timeout: 10000,
-    });
-    if (!res.ok) throw new Error('guest HTTP ' + res.status);
-    var json = await res.json();
-    // La risposta ha: { response: { signed: "TOKEN..." } }
-    var token = (json.response && json.response.signed) || json.signed || null;
-    if (!token) throw new Error('signed non trovato: ' + JSON.stringify(json).slice(0, 200));
-    vavooGuestToken = token;
-    vavooGuestTokenTs = Date.now();
-    console.log('[Vavoo] Guest token ottenuto, lunghezza: ' + token.length);
-    return token;
-  } catch (e) {
-    console.error('[Vavoo] getVavooGuestToken error:', e.message);
-    return null;
+    var decoded = Buffer.from(addonSig, 'base64').toString('utf8');
+    var sigObj = JSON.parse(decoded);
+    if (sigObj && sigObj.data) {
+      var dataObj = JSON.parse(sigObj.data);
+      var currentIps = Array.isArray(dataObj.ips) ? dataObj.ips : [];
+      dataObj.ips = [clientIP].concat(currentIps.filter(function(x) { return x && x !== clientIP; }));
+      if (typeof dataObj.ip === 'string') dataObj.ip = clientIP;
+      sigObj.data = JSON.stringify(dataObj);
+      addonSig = Buffer.from(JSON.stringify(sigObj)).toString('base64');
+    }
+  } catch (e) { /* mantieni sig originale */ }
+
+  return addonSig;
+}
+
+// Risolve lo stream Vavoo tramite mediahubmx-resolve.json
+async function resolveVavooStreamUrl(channelId, clientIP) {
+  var vavooUrl = 'https://vavoo.to/play/' + channelId + '/index.m3u8';
+  var addonSig = await getAddonSig(clientIP);
+  console.log('[Vavoo] resolving', channelId, 'for IP', clientIP);
+
+  var res = await fetch('https://vavoo.to/mediahubmx-resolve.json', {
+    method: 'POST',
+    headers: {
+      'user-agent': 'MediaHubMX/2',
+      'accept': 'application/json',
+      'content-type': 'application/json; charset=utf-8',
+      'accept-encoding': 'gzip',
+      'mediahubmx-signature': addonSig,
+      'X-Forwarded-For': clientIP,
+      'X-Real-IP': clientIP,
+    },
+    body: JSON.stringify({ language: 'de', region: 'AT', url: vavooUrl, clientVersion: '3.0.2' }),
+    timeout: 12000,
+  });
+
+  if (!res.ok) throw new Error('mediahubmx-resolve HTTP ' + res.status);
+  var result = await res.json();
+
+  var streamUrl;
+  if (Array.isArray(result)) {
+    var httpsItem = result.find(function(i) { return i.url && i.url.startsWith('https://'); });
+    streamUrl = httpsItem ? httpsItem.url : (result[0] && result[0].url);
+  } else {
+    streamUrl = result && result.url;
   }
+
+  if (!streamUrl) throw new Error('nessun URL stream nella risposta mediahubmx: ' + JSON.stringify(result).slice(0, 200));
+  console.log('[Vavoo] resolved OK for', channelId);
+  return streamUrl;
 }
 
 async function fetchVavooItaly() {
@@ -253,15 +326,6 @@ async function fetchVavooItaly() {
     console.error('[Vavoo] fetchVavooItaly error:', e.message);
     return [];
   }
-}
-
-async function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
-  // Il token Vavoo e IP-locked all'IP che lo genera (LelloTV su Render).
-  // Quindi NON usiamo EasyProxy per Vavoo (avrebbe IP diverso).
-  // LelloTV stesso fa da proxy HLS: genera il token e proxia i segmenti
-  // dal suo IP, che coincide con l'IP nel token.
-  // Stremio riceve: https://lellotv-xxx.onrender.com/vavoo-hls/<channelId>
-  return { url: '__SELF_BASE__/vavoo-hls/' + channelId };
 }
 
 // DLStreams
@@ -440,13 +504,18 @@ app.get('/vavoo-hls/:channelId', async function(req, res) {
     if (!token) return res.status(503).json({ error: 'Token Vavoo non disponibile' });
 
     var channelId = req.params.channelId;
-    var streamUrl = 'https://vavoo.to/vavoo-iptv/play/' + channelId + token;
+    // Formato corretto con guest token: ?vavoo_auth=<token>
+    // SSL ignorato perche il CDN Vavoo ha certificato scaduto
+    var streamUrl = 'https://vavoo.to/play/' + channelId + '/index.m3u8?vavoo_auth=' + encodeURIComponent(token);
     console.log('[Vavoo HLS] fetching manifest for', channelId);
 
     var upstream = await fetch(streamUrl, {
       headers: { 'User-Agent': VAVOO_UA },
       redirect: 'follow',
       timeout: 12000,
+      agent: function(parsedUrl) {
+        return parsedUrl.protocol === 'https:' ? VAVOO_AGENT : undefined;
+      },
     });
 
     if (!upstream.ok) {
@@ -483,6 +552,9 @@ app.get('/vavoo-seg', async function(req, res) {
       headers: { 'User-Agent': VAVOO_UA },
       redirect: 'follow',
       timeout: 20000,
+      agent: function(parsedUrl) {
+        return parsedUrl.protocol === 'https:' ? VAVOO_AGENT : undefined;
+      },
     });
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', upstream.headers.get('content-type') || 'video/MP2T');
@@ -602,12 +674,14 @@ app.use(async function(req, res, next) {
     } else if (resource === 'stream') {
       if (id.startsWith('lellotv-vavoo-')) {
         var chId = id.replace('lellotv-vavoo-', '');
-        var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
-        // Sostituisce il placeholder con il vero URL pubblico del server
-        if (stream.url && stream.url.includes('__SELF_BASE__')) {
-          stream = Object.assign({}, stream, { url: stream.url.replace('__SELF_BASE__', getSelfBase(req)) });
+        var clientIP = getViewerIP(req);
+        try {
+          var streamUrl = await resolveVavooStreamUrl(chId, clientIP);
+          result = { streams: [{ url: streamUrl, name: 'LelloTV', description: '\ud83c\uddee\ud83c\uddf9 Vavoo Italia' }] };
+        } catch (e) {
+          console.error('[Vavoo] resolve error:', e.message);
+          result = { streams: [] };
         }
-        result = { streams: [Object.assign({}, stream, { name: 'LelloTV', description: '\ud83c\uddee\ud83c\uddf9 Vavoo Italia' })] };
       } else if (id.startsWith('lellotv-dl-')) {
         var chId = id.replace('lellotv-dl-', '');
         var stream = await resolveDLStream(chId, config.proxyUrl, config.proxyPassword);
