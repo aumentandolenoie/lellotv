@@ -190,6 +190,45 @@ const CONFIGURE_HTML = `<!DOCTYPE html>
 
 var VAVOO_UA = 'VAVOO/2.6';
 
+// Cache del guest token
+var vavooGuestToken = null;
+var vavooGuestTokenTs = 0;
+var GUEST_TOKEN_TTL = 30 * 60 * 1000; // 30 minuti (token dura ~60 min)
+
+async function getVavooGuestToken() {
+  if (vavooGuestToken && Date.now() - vavooGuestTokenTs < GUEST_TOKEN_TTL) {
+    return vavooGuestToken;
+  }
+  try {
+    var res = await fetch('https://www.vavoo.tv/api/box/guest', {
+      method: 'POST',
+      headers: {
+        'User-Agent': VAVOO_UA,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        platform: 'Windows NT x86 32-bit',
+        version: '2.6',
+        service_version: '1.2.24',
+        branch: 'master',
+      }),
+      timeout: 10000,
+    });
+    if (!res.ok) throw new Error('guest HTTP ' + res.status);
+    var json = await res.json();
+    // La risposta ha: { response: { signed: "TOKEN..." } }
+    var token = (json.response && json.response.signed) || json.signed || null;
+    if (!token) throw new Error('signed non trovato: ' + JSON.stringify(json).slice(0, 200));
+    vavooGuestToken = token;
+    vavooGuestTokenTs = Date.now();
+    console.log('[Vavoo] Guest token ottenuto, lunghezza: ' + token.length);
+    return token;
+  } catch (e) {
+    console.error('[Vavoo] getVavooGuestToken error:', e.message);
+    return null;
+  }
+}
+
 async function fetchVavooItaly() {
   try {
     var res = await fetch('https://vavoo.to/channels', {
@@ -216,24 +255,31 @@ async function fetchVavooItaly() {
   }
 }
 
-function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
-  // Il token Vavoo e IP-locked: deve essere generato dallo stesso IP che usa lo stream.
-  // Deleghiamo tutto a EasyProxy con host=vavoo: lui chiama ping2, genera il token
-  // dal suo IP e proxia lo stream. /extractor/video.m3u8 restituisce un m3u8 diretto.
-  var channelUrl = 'https://vavoo.to/play/' + channelId + '/index.m3u8';
+async function resolveVavooStream(channelId, proxyUrl, proxyPassword) {
+  // 1. Ottieni il guest token da vavoo.tv/api/box/guest
+  // 2. Costruisci URL: https://vavoo.to/vavoo-iptv/play/<id><token>
+  //    (questo è il formato corretto usato da TvVoo e altri addon funzionanti)
+  // 3. Passa a EasyProxy come proxy/manifest.m3u8?d=<url>
+  var token = await getVavooGuestToken();
   var base = (proxyUrl || '').replace(/\/$/, '');
   var pwd = encodeURIComponent(proxyPassword || '');
 
+  // URL stream nel formato corretto con token autenticato
+  var streamUrl = token
+    ? 'https://vavoo.to/vavoo-iptv/play/' + channelId + token
+    : 'https://vavoo.to/play/' + channelId + '/index.m3u8';
+
   if (!base) {
     return {
-      url: channelUrl,
+      url: streamUrl,
       behaviorHints: { notWebReady: false, headers: { 'User-Agent': VAVOO_UA } },
     };
   }
 
-  var url = base + '/extractor/video.m3u8'
-    + '?host=vavoo'
-    + '&d=' + encodeURIComponent(channelUrl)
+  // EasyProxy proxia il manifest con User-Agent VAVOO/2.6
+  var url = base + '/proxy/manifest.m3u8'
+    + '?d=' + encodeURIComponent(streamUrl)
+    + '&h_User-Agent=VAVOO%2F2.6'
     + '&api_password=' + pwd;
 
   return { url: url };
@@ -374,7 +420,7 @@ builder.defineStreamHandler(async function(args) {
   var config = parseConfig(configRaw);
   if (id.startsWith('lellotv-vavoo-')) {
     var chId = id.replace('lellotv-vavoo-', '');
-    var stream = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+    var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
     return { streams: [Object.assign({}, stream, { name: 'LelloTV', description: 'Vavoo Italia' })] };
   }
   if (id.startsWith('lellotv-dl-')) {
@@ -507,7 +553,7 @@ app.use(async function(req, res, next) {
     } else if (resource === 'stream') {
       if (id.startsWith('lellotv-vavoo-')) {
         var chId = id.replace('lellotv-vavoo-', '');
-        var stream = resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
+        var stream = await resolveVavooStream(chId, config.proxyUrl, config.proxyPassword);
         result = { streams: [Object.assign({}, stream, { name: 'LelloTV', description: 'Vavoo Italia' })] };
       } else if (id.startsWith('lellotv-dl-')) {
         var chId = id.replace('lellotv-dl-', '');
